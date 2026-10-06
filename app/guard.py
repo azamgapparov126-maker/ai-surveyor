@@ -175,7 +175,8 @@ ADMIN_METHOD_PATH = {("POST", "/valuation/norms"), ("DELETE", "/valuation/norms"
                      # админ-панель 02.10.2026: сотрудник вручную, импорт продуктов и страховых случаев
                      ("POST", "/tg/users/manual"),
                      ("POST", "/reference/products/import"), ("POST", "/reference/products/import/apply"),
-                     ("POST", "/claims/import"), ("POST", "/claims/import/apply")}
+                     ("POST", "/claims/import"), ("POST", "/claims/import/apply"),
+                     ("PUT", "/claims/yearly")}             # итоги по году и продукту — ручной ввод (06.10.2026)
 # то же по началу пути: у удаления нормы износа код в адресе (/valuation/norms/{code}),
 # и точное совпадение из ADMIN_METHOD_PATH его не ловило
 ADMIN_METHOD_PREFIX = {("DELETE", "/valuation/norms/"),

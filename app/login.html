@@ -174,7 +174,10 @@ input:focus,select:focus{outline:none;border-color:var(--accent-dim)}
   }
   function busy(f,on){ f.querySelector("button.go").disabled=on; }
   function done(j){ const u=j.user||{}; msg("login","Здравствуйте, "+(u.full_name||u.login)+". Входим…","ok");
-    location.href = new URLSearchParams(location.search).get("next") || "/"; }
+    location.href = safeNext(); }
+  // возвращаем только на свой адрес: «/admin», а не «//чужой-сайт» и не «https://…»
+  function safeNext(){ const n=new URLSearchParams(location.search).get("next")||"";
+    return /^\/(?![\/\\])/.test(n) ? n : "/"; }
 
   forms.login.onsubmit=async e=>{ e.preventDefault(); msg("login"); busy(forms.login,true);
     try{ const d=data(forms.login); const j=await post("/auth/login",d);

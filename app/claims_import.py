@@ -4,6 +4,8 @@
   GET  /claims/template.xlsx      — шаблон
   POST /claims/import             — файл .xlsx ≤ 10 МБ → предпросмотр с проверками и token (администратор)
   POST /claims/import/apply       — {token} → запись в claims + строка claim_batches (администратор)
+  GET  /claims/yearly?years=2023,2024,2025 — итоги по году и продукту: число случаев и сумма (ручной ввод и файлы)
+  PUT  /claims/yearly             — {year, rows:[{product_code, cases, amount}]} → итоги года вручную (администратор)
   GET  /claims/summary?years=3    — по продуктам и классам: случаи, заявлено, выплачено, средняя выплата,
                                     убыточность (выплачено / премия) — актуарий и администратор (app/guard.py)
 
@@ -355,3 +357,141 @@ def claims_summary(years: int = 3):
         raise HTTPException(422, "years — от 1 до 10")
     with db.tx() as con:
         return summary(con, years)
+
+
+# --------------------------------------------------------------------------- #
+#  Итоги по году и продукту — ручной ввод (записка заказчика, 06.10.2026)
+# --------------------------------------------------------------------------- #
+# Заказчик вводит «за год по продукту: число случаев и сумма». Отдельной таблицы итогов нет, а сводка
+# (summary) и калибровка (app/calibration.py) считают случаи строками claims. Поэтому итог года пишется
+# N строками claims — по одной на случай, сумма делится поровну: число случаев, сумма выплат и средняя
+# выплата в сводке и калибровке получаются ровно такими, как ввёл человек. Метки строк:
+# source = «итог за год», object_type = «итог за год», external_no = agg-<год>-<продукт>-<№>,
+# статус «урегулирован», дата события — 31.12 года (для текущего года — сегодня: будущую дату сводка не берёт).
+# Повторное сохранение года заменяет его ручные итоги целиком; строки из Excel не трогаются.
+
+AGG_SOURCE = "итог за год"
+AGG_MAX_CASES = 100000
+
+
+def _agg_date(year: int, today: date) -> str:
+    end = date(year, 12, 31)
+    return (end if end <= today else today).isoformat()
+
+
+def yearly(con, years: list, today: Optional[date] = None) -> dict:
+    today = today or date.today()
+    names = {r["code"]: r["name"] for r in db.rows(con, "SELECT code, name FROM products")}
+    rows = db.rows(con, """SELECT COALESCE(c.product_code, r.product_code) AS product_code, c.source,
+                                  c.paid, c.claimed, c.status, COALESCE(c.event_date, c.reported_date) AS d
+                           FROM claims c LEFT JOIN requests r ON r.id = c.request_id""")
+    out = []
+    for y in years:
+        lo, hi = f"{y}-01-01", f"{y}-12-31"
+        manual, files = {}, {}
+        for r in rows:
+            d = str(r["d"] or "")[:10]
+            if not (lo <= d <= hi):
+                continue
+            pc = r["product_code"] or "—"
+            bucket = manual if r["source"] == AGG_SOURCE else files
+            g = bucket.setdefault(pc, {"cases": 0, "amount": 0.0})
+            g["cases"] += 1
+            g["amount"] += float(r["paid"] if r["paid"] is not None else (r["claimed"] or 0))
+        pack = lambda b: [{"product_code": k, "product_name": names.get(k), "cases": v["cases"],
+                           "amount": round(v["amount"], 2)} for k, v in sorted(b.items())]
+        out.append({"year": y, "manual": pack(manual), "files": pack(files),
+                    "event_date": _agg_date(y, today) if y <= today.year else None})
+    return {"years": out, "source": AGG_SOURCE}
+
+
+def _years_arg(raw: str, today: date) -> list:
+    try:
+        ys = [int(x) for x in str(raw or "").replace(" ", "").split(",") if x]
+    except ValueError:
+        raise HTTPException(422, "years — годы через запятую, например 2023,2024,2025")
+    if not ys:
+        ys = [today.year - 3, today.year - 2, today.year - 1]
+    if len(ys) > 10 or any(y < 1991 or y > today.year for y in ys):
+        raise HTTPException(422, f"Годы — от 1991 до {today.year}, не больше десяти")
+    return ys
+
+
+@router.get("/claims/yearly")
+def claims_yearly(years: str = ""):
+    today = date.today()
+    ys = _years_arg(years, today)
+    with db.tx() as con:
+        return yearly(con, ys, today)
+
+
+def save_yearly(con, year, rows, who: str, today: Optional[date] = None) -> dict:
+    today = today or date.today()
+    try:
+        year = int(year)
+    except (TypeError, ValueError):
+        raise HTTPException(422, "Год — целое число, например 2024")
+    if year < 1991 or year > today.year:
+        raise HTTPException(422, f"Год — от 1991 до {today.year}")
+    if not isinstance(rows, list):
+        raise HTTPException(422, "rows — список строк {product_code, cases, amount}")
+    products = {r["code"] for r in db.rows(con, "SELECT code FROM products")}
+    first_cls = {}
+    for r in db.rows(con, "SELECT product_code, class_code FROM product_classes ORDER BY part_no"):
+        first_cls.setdefault(r["product_code"], r["class_code"])
+    errors, clean, seen = [], [], set()
+    for i, r in enumerate(rows, start=1):
+        r = r if isinstance(r, dict) else {}
+        code = xi.product_code(r.get("product_code"))
+        try:
+            n = int(float(r.get("cases")))
+        except (TypeError, ValueError):
+            n = None
+        try:
+            amt = float(str(r.get("amount")).replace(" ", "").replace(",", "."))
+        except (TypeError, ValueError):
+            amt = None
+        bad = []
+        if not code:
+            bad.append("код продукта пустой")
+        elif code not in products:
+            bad.append(f"продукта {code} нет в справочнике")
+        elif code in seen:
+            bad.append(f"продукт {code} в этом году уже есть строкой выше")
+        if n is None or n < 0 or n > AGG_MAX_CASES:
+            bad.append(f"число случаев — целое от 0 до {AGG_MAX_CASES}")
+        if amt is None or amt < 0:
+            bad.append("сумма — число не меньше нуля")
+        if n == 0 and amt:
+            bad.append("сумма есть, а случаев 0")
+        if bad:
+            errors.append(f"строка {i}: " + "; ".join(bad))
+        else:
+            seen.add(code)
+            clean.append((code, n, amt))
+    if errors:
+        raise HTTPException(422, {"message": "Год не сохранён — исправьте строки", "errors": errors})
+    d, now = _agg_date(year, today), db.now()
+    lo, hi = f"{year}-01-01", f"{year}-12-31"
+    gone = con.execute("DELETE FROM claims WHERE source=? AND event_date BETWEEN ? AND ?", (AGG_SOURCE, lo, hi)).rowcount
+    written = 0
+    for code, n, amt in clean:
+        each = round(amt / n, 2) if n else 0.0
+        for k in range(1, n + 1):
+            # последняя строка забирает остаток округления: сумма за год сходится до тийина
+            pay = round(amt - each * (n - 1), 2) if k == n else each
+            con.execute("INSERT INTO claims (external_no, product_code, class_code, object_type, event_date, claimed, paid,"
+                        " status, source, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (f"agg-{year}-{code}-{k}", code, first_cls.get(code), AGG_SOURCE, d, pay, pay,
+                         "урегулирован", AGG_SOURCE, now))
+            written += 1
+    db.audit(con, who, "страховые случаи: итоги года", f"year:{year}",
+             {"products": len(clean), "cases": written, "replaced": gone})
+    return {"ok": True, "year": year, "products": len(clean), "cases": written, "replaced": gone, "event_date": d}
+
+
+@router.put("/claims/yearly")
+def claims_yearly_put(body: dict = Body(...), user: dict = Depends(require(ADMIN))):
+    body = body if isinstance(body, dict) else {}
+    with db.tx() as con:
+        return save_yearly(con, body.get("year"), body.get("rows"), user["login"])

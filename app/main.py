@@ -30,7 +30,7 @@
   POST /tg/auth                         — вход мини-приложения Telegram
   POST /tg/webhook/{secret}             — обновления от бота Telegram (app/tgbot.py)
   GET  /tg/me, /tg/inbox, /tg/my-requests, /tg/bot-status — данные для мини-приложения
-  GET  /ui — экран агента, GET /admin — админка, GET /admin/deploy — запуск, GET /tg — мини-апп
+  GET  /ui — экран агента, GET /admin — админка (то же /admin/hub), GET /admin/deploy — запуск, GET /tg — мини-апп
 
 Доступ: всё, кроме белого списка (/health, /login, /auth/*, /tg…, /theme.js), требует сессии —
 единый вход app/guard.py. Разделы админа (/admin*, /deploy/*, /tasks*, /reports*, /audit) — только «админ».
@@ -1043,9 +1043,10 @@ EMBED_CSS = ("<style id=\"embed-nav-off\">"
 
 # «Выйти из админки» (22.09.2026): уводит в мини-апп в режиме обычного пользователя.
 # Права не меняет — это только вид; мини-апп по ?mode=user прячет админские разделы и показывает
-# плашку «Вернуться в админку». Единая админка /admin/hub рисует кнопку сама, здесь — /admin и /admin/deploy.
+# плашку «Вернуться в админку». Здесь — только /admin/deploy.
 EXIT_ADMIN_URL = "/tg?mode=user"
-EXIT_ADMIN_PAGES = ("/admin", "/admin/deploy")
+# 06.10.2026: на самой админке (/admin) кнопки нет — там «Выход» из учётной записи; осталась на /admin/deploy.
+EXIT_ADMIN_PAGES = ("/admin/deploy",)
 EXIT_ADMIN_CSS = (
     "<style id=\"exit-admin-css\">#exitAdmin{position:fixed;top:12px;right:16px;z-index:70;display:inline-flex;"
     "align-items:center;gap:8px;min-height:40px;padding:8px 14px;border-radius:10px;border:1px solid var(--line,#6B7883);"
@@ -1110,24 +1111,18 @@ def ui(embed: int = 0):
     return web.build(("ui", bool(embed)), [AGENT_UI], lambda: _ui_page(bool(embed)))
 
 
-@app.get("/admin", response_class=HTMLResponse)
-def admin():
-    html = web.read_text(ROOT / "app" / "admin.html")
-    html = html.replace("<div class=\"wrap\">", sidebar("/admin") + "<div class=\"wrap\">", 1)
-    # в шапке /admin справа уже есть ссылки — кнопку ставим к ним, а не поверх
-    if "<header><h1>Админка сюрвейера</h1><nav>" in html:
-        return EXIT_ADMIN_CSS + html.replace("<header><h1>Админка сюрвейера</h1><nav>",
-                                             "<header><h1>Админка сюрвейера</h1><nav>" + EXIT_ADMIN_LINK, 1)
-    return html + EXIT_ADMIN_HTML
-
-
 ADMIN_HUB = ROOT / "app" / "admin_hub.html"
 
 
+# Админка — отдельный сайт по адресу /admin (записка заказчика, 06.10.2026): без входа guard отправляет на
+# /login?next=/admin, после входа страница входа возвращает сюда. Прежний адрес /admin/hub отдаёт то же самое.
+# Старая страница app/admin.html больше не отдаётся: её запросы и справочники — в «Дополнительно».
+@app.get("/admin", response_class=HTMLResponse)
+@app.get("/admin/", response_class=HTMLResponse)
 @app.get("/admin/hub", response_class=HTMLResponse)
 @app.get("/admin/hub/", response_class=HTMLResponse)
 def admin_hub():
-    """Единая админка: каркас с левым меню, разделы открываются в iframe с ?embed=1.
+    """Админка: левое меню из пяти пунктов, прежние разделы — в «Дополнительно» (часть открывается в iframe с ?embed=1).
     Файл верстает дизайнер; пока его нет — понятная 404, сервер поднимается как обычно."""
     if not ADMIN_HUB.exists():
         raise HTTPException(404, "страница app/admin_hub.html ещё не сделана")

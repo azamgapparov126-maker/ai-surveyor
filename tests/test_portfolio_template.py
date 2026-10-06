@@ -12,7 +12,7 @@
   3. кривой файл: ошибки по строкам и колонкам, загрузка не делается, в базе ничего не появилось;
   4. через сервер: GET /portfolio/template.xlsx, POST /portfolio/preview и /portfolio/import, сводка загрузки;
   5. GET /stats — 200 и блоки дашборда; /tg/me?view=user у админа — меню и права как у сотрудника;
-  6. кнопка «Выйти из админки» на /admin/hub, /admin, /admin/deploy.
+  6. кнопка «Выйти из админки» на /admin/deploy; на /admin и /admin/hub — «Выход» (06.10.2026).
 """
 import asyncio
 import io
@@ -325,10 +325,16 @@ def check_api(tmp: Path):
     ok("сотрудник с view=user: admin_available=false", me4["admin_available"] is False and me4["view"] == "user", me4)
 
     print("6. Кнопка «Выйти из админки»")
-    for path in ("/admin/hub", "/admin", "/admin/deploy"):
+    # 06.10.2026 (записка заказчика): админка /admin — отдельный сайт; режима mode=user в её шапке нет,
+    # вместо него «Выход» из учётной записи. Кнопка в мини-апп осталась на /admin/deploy.
+    for path in ("/admin/hub", "/admin"):
         st, html = call("GET", path, who=ADM)
         html = html.decode("utf-8") if isinstance(html, bytes) else str(html)
-        ok(f"{path}: кнопка ведёт на /tg?mode=user", st == 200 and "/tg?mode=user" in html and "Выйти из админки" in html, st)
+        ok(f"{path}: без mode=user, есть «Выход» через /auth/logout",
+           st == 200 and "/tg?mode=user" not in html and "/auth/logout" in html and ">Выход<" in html, st)
+    st, html = call("GET", "/admin/deploy", who=ADM)
+    html = html.decode("utf-8") if isinstance(html, bytes) else str(html)
+    ok("/admin/deploy: кнопка ведёт на /tg?mode=user", st == 200 and "/tg?mode=user" in html and "Выйти из админки" in html, st)
     st, html = call("GET", "/admin/deploy", params={"embed": 1}, who=ADM)
     html = html.decode("utf-8") if isinstance(html, bytes) else str(html)
     ok("во встроенном окне (embed=1) второй кнопки нет", "exitAdmin" not in html, "")

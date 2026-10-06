@@ -1,14 +1,16 @@
 <!doctype html>
+<html lang="ru" data-theme="light">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Админка INSON</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Spline+Sans+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 <!--
-  Одна админка для браузера и для мини-аппа Telegram (21.09.2026).
-  Это сборка уже готовых разделов, а не новая логика: страница либо читает существующие точки API,
-  либо показывает готовую страницу во встроенном окне (iframe, тот же домен, сессия — cookie sid).
-  Маршрут GET /admin/hub и режим ?embed=1 (без общего меню слева) делает app/main.py.
-  Ничего сверх перечисленного здесь не появляется: спорные пункты уходят в docs/Открытые вопросы.md.
+  Админка как отдельный сайт (записка заказчика, 06.10.2026): адрес /admin (и прежний /admin/hub), вход по логину
+  и паролю — без сессии guard отправляет на /login?next=/admin, после входа страница возвращается сюда.
+  Меню из пяти пунктов: Сотрудники, Продукты, Страховые случаи, Дополнительно (всё прежнее содержимое
+  админки — разделы V.<группа>_<раздел> без изменений), Выход. Светлая дизайн-система INSON:
+  docs/design/design_system.html, токены docs/design/ds_build/tokens.css (синий INSON, белые карточки, Inter,
+  поля 16, кнопки 48). Тёмной темы здесь нет намеренно: заказчик просил «простой светлый сайт».
 -->
 <style>
 /* ===== ui-kit кнопок INSON v1 — один и тот же блок в app/tg.html, app/admin_hub.html, app/login.html =====
@@ -46,115 +48,170 @@ html[data-theme="light"]{--btn-line:#7A8894;--btn-hover:rgba(16,28,38,.06);--foc
 .actions{display:flex;flex-direction:row-reverse;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:8px;margin-top:16px}
 @media (max-width:599px){.actions{flex-direction:column;align-items:stretch}.actions .btn{width:100%}}
 /* ===== конец ui-kit ===== */
-:root{--paper:#0F1418;--card:#161C21;--ink:#E6ECF0;--muted:#8E9BA6;--line:#26303A;--soft:#1C242B;
-  --accent:#2BC46E;--accent-dim:#1E8F52;--warn:#E0A83F;--stop:#EE8272;--ok:#5CC298;
-  --sans:"Manrope",system-ui,sans-serif;--mono:"Spline Sans Mono",ui-monospace,monospace;
-  --rail:58px;--menu:214px}
+/* ===== дизайн-система INSON (docs/design/ds_build/tokens.css, светлая) ===== */
+:root{
+  --bg:#f7f8fb;--surface:#ffffff;--surface-warm:#eef4ff;--fg:#111827;--fg-2:#334155;
+  --border:#dbe3ef;--border-soft:#edf2f7;--accent-in:#1D2C8F;--accent-soft:#e6e9f7;
+  --success-fg:#157a3f;--success-soft:#e3f5ea;--warn-fg:#b45309;--warn-soft:#fef3d7;--danger-fg:#c62828;--danger-soft:#fde8e8;
+  --logo-ins:#1D2C8F;--logo-on:#22A85A;
+  --font-sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --radius-sm:12px;--radius-md:20px;--touch:48px;
+  --focus-ring:0 0 0 4px rgba(29,44,143,.22);
+  /* имена, которыми пользуются прежние разделы (V.*): те же значения дизайн-системы */
+  --paper:var(--bg);--card:var(--surface);--ink:var(--fg);--muted:#5b6b80;--line:var(--border);--soft:#f1f4f9;
+  --accent:var(--accent-in);--accent-dim:#16237a;--warn:var(--warn-fg);--stop:var(--danger-fg);--ok:var(--success-fg);
+  --sans:var(--font-sans);--mono:var(--font-mono);
+  --btn-line:#c3cedd;--btn-hover:rgba(29,44,143,.06);--focus:#1D2C8F;--link:#1D2C8F;
+  --side:248px;color-scheme:light}
+/* кнопки по дизайн-системе: основная — синий INSON, высота 48 (блок ui-kit выше общий для трёх страниц и не меняется) */
+.btn{min-height:var(--touch);border-radius:var(--radius-sm);font:600 15px/1.25 var(--font-sans);padding:12px 20px}
+.btn-sm{min-height:44px;padding:8px 14px;font-size:14px}
+.btn-primary,.btn-primary:visited{background:var(--accent-in);border-color:var(--accent-in);color:#fff;-webkit-text-fill-color:#fff}
+.btn-primary:hover:not(:disabled){background:#16237a;border-color:#16237a}
+.btn-primary:active:not(:disabled){background:#111b5f}
+.btn-secondary,.btn-secondary:visited{background:var(--surface)}
+.btn:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 *{box-sizing:border-box}
 html,body{min-height:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.5 var(--sans)}
-a{color:var(--accent)}
-.app{display:grid;grid-template-columns:var(--rail) var(--menu) minmax(0,1fr);align-items:start}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 16px/1.5 var(--font-sans);-webkit-font-smoothing:antialiased}
+a{color:var(--accent-in)}
+.app{display:grid;grid-template-columns:var(--side) minmax(0,1fr);min-height:100vh}
 
-/* --- рейка групп --- */
-.rail{position:sticky;top:0;height:100vh;overflow-y:auto;background:#0C1216;border-right:1px solid var(--line);
-  display:flex;flex-direction:column;gap:2px;padding:10px 0}
-.rail .mark{display:grid;place-items:center;height:40px;margin-bottom:8px}
-.rail .mark b{width:30px;height:30px;border-radius:50%;background:var(--accent-dim);display:grid;place-items:center;
-  color:#0C1216;font:800 13px var(--sans)}
-.rail button{background:none;border:0;color:var(--muted);cursor:pointer;display:flex;flex-direction:column;
-  align-items:center;gap:3px;padding:8px 2px;font:600 9px var(--sans);line-height:1.15;text-align:center;width:100%}
-.rail button i{font-style:normal;font-size:17px;line-height:1}
-.rail button u{text-decoration:none}
-.rail button.on{color:var(--accent);box-shadow:inset 2px 0 0 var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent)}
-.rail button:focus-visible,.menu a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.rail .exit{margin-top:auto;color:var(--muted);text-decoration:none;display:flex;flex-direction:column;align-items:center;
-  gap:3px;padding:10px 2px;font:600 9px var(--sans);line-height:1.15;text-align:center;border-top:1px solid var(--line)}
-.rail .exit i{font-style:normal;font-size:17px;line-height:1}.rail .exit u{text-decoration:none}
-.rail .exit:hover{color:var(--ink)}.rail .exit:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-#tools{display:flex;gap:8px;align-items:center}
-
-/* --- список разделов группы --- */
-.menu{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line);padding:16px 10px 24px;background:var(--card)}
-.menu h2{font:800 13px var(--sans);margin:0 0 2px;padding:0 8px}
-.menu p{font-size:11px;color:var(--muted);margin:0 0 12px;padding:0 8px}
-.menu a{display:block;text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;
-  padding:8px 10px;border-radius:9px}
-.menu a.on{color:var(--ink);background:var(--soft);box-shadow:inset 2px 0 0 var(--accent)}
+/* --- левое меню --- */
+.side{position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:20px 12px 16px}
+.brand{display:flex;flex-direction:column;padding:4px 12px 20px}
+.logo{font:800 24px/1 var(--font-sans);letter-spacing:-.02em}.logo b:first-child{color:var(--logo-ins)}.logo b+b{color:var(--logo-on)}
+.brand small{font:500 12px/16px var(--font-sans);color:var(--muted);margin-top:4px}
+.menu-btn{display:none}
+#nav{display:flex;flex-direction:column;gap:4px;flex:1}
+.nv{display:flex;align-items:center;gap:12px;width:100%;min-height:var(--touch);padding:0 12px;border:0;border-radius:var(--radius-sm);
+  background:none;color:var(--fg-2);font:500 15px/20px var(--font-sans);text-align:left;text-decoration:none;cursor:pointer}
+.nv svg{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.nv:hover{background:var(--soft)}
+.nv.on{background:var(--accent-soft);color:var(--accent-in);font-weight:600}
+.nv:focus-visible,.sub a:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.nv .chev{margin-left:auto;width:18px;height:18px;transition:transform .15s}
+.nv[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.sub{padding:2px 0 8px 10px;border-left:1px solid var(--border);margin:0 0 4px 22px}
+.sub h4{font:600 11px/16px var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:10px 0 2px 10px}
+.sub a{display:block;padding:7px 10px;border-radius:10px;color:var(--fg-2);font:400 14px/20px var(--font-sans);text-decoration:none}
+.sub a:hover{background:var(--soft)}.sub a.on{color:var(--accent-in);background:var(--accent-soft);font-weight:600}
+.foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border-soft)}
+.who{font:400 13px/18px var(--font-sans);color:var(--muted);padding:4px 12px 8px;overflow-wrap:anywhere}
 
 /* --- содержимое --- */
-main{padding:20px 22px 44px;min-width:0}
-.head{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;justify-content:space-between;margin-bottom:14px}
-h1{font:800 21px var(--sans);margin:0}
-.head .why{font-size:12.5px;color:var(--muted);max-width:56ch;margin:2px 0 0}
-.back{display:none;margin-bottom:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 16px;margin-bottom:12px;min-width:0}
-.card h3{font:700 14px var(--sans);margin:0 0 3px}
-.card .note{font-size:12px;color:var(--muted);margin:0 0 10px}
-.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
-.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
-.tile b{display:block;font:600 21px var(--mono)}.tile span{font-size:11.5px;color:var(--muted)}
+main{padding:32px 32px 64px;min-width:0;max-width:1240px}
+.head{margin-bottom:20px}
+h1{font:700 26px/32px var(--font-sans);letter-spacing:-.01em;margin:0}
+.head .why{font-size:15px;color:var(--muted);max-width:70ch;margin:6px 0 0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px 24px;margin-bottom:16px;min-width:0}
+.card h3{font:600 18px/24px var(--font-sans);margin:0 0 4px}
+.card .note{font-size:14px;color:var(--muted);margin:0 0 14px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px}
+.tile b{display:block;font:600 22px/30px var(--font-mono)}.tile span{font-size:13px;color:var(--muted)}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{width:100%;border-collapse:collapse;font-size:12.5px}
-th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font:600 10.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
-td.n{font-family:var(--mono);text-align:right;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border-soft);vertical-align:top}
+th{font:600 12px/16px var(--font-sans);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);white-space:nowrap;background:var(--soft)}
+td.n,th.n{font-family:var(--font-mono);text-align:right;white-space:nowrap}
 tr.pick{cursor:pointer}tr.pick:hover td{background:var(--soft)}
-.v{display:inline-block;font:700 11px var(--sans);border-radius:5px;padding:1px 7px;white-space:nowrap}
-.v.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
-.v.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
-.v.stop{background:color-mix(in srgb,var(--stop) 16%,transparent);color:var(--stop)}
+.v{display:inline-block;font:600 12px/18px var(--font-sans);border-radius:999px;padding:1px 9px;white-space:nowrap}
+.v.ok{background:var(--success-soft);color:var(--success-fg)}
+.v.warn{background:var(--warn-soft);color:var(--warn-fg)}
+.v.stop{background:var(--danger-soft);color:var(--danger-fg)}
 .v.dim{background:var(--soft);color:var(--muted)}
-form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;align-items:end}
-label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted)}
-input,select,textarea{font:inherit;color:var(--ink);background:var(--soft);border:1px solid var(--line);
-  border-radius:8px;padding:8px 10px;width:100%;min-width:0}
-.msg{font-size:12px;color:var(--muted);margin-top:8px;min-height:1em}
-.msg.bad{color:var(--stop)}
-.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
-.kv{display:grid;grid-template-columns:minmax(120px,auto) 1fr;gap:5px 14px;font-size:13px}
+form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px 16px;align-items:end}
+label{display:flex;flex-direction:column;gap:6px;font:500 14px/20px var(--font-sans);color:var(--fg-2)}
+label small{font-weight:400;color:var(--muted)}
+input,select,textarea{font:400 16px/22px var(--font-sans);color:var(--fg);background:var(--surface);border:1px solid var(--btn-line);
+  border-radius:var(--radius-sm);padding:12px 14px;width:100%;min-width:0;min-height:var(--touch)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent-in);box-shadow:var(--focus-ring)}
+input[readonly]{background:var(--soft);color:var(--fg-2)}
+input[type="checkbox"]{min-height:0;width:auto}
+td input,td select{min-height:44px;padding:9px 12px}
+.msg{font-size:14px;color:var(--muted);margin-top:10px;min-height:1em}
+.msg.bad{color:var(--danger-fg)}.msg.good{color:var(--success-fg)}
+.msg ul{margin:6px 0 0;padding-left:20px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.kv{display:grid;grid-template-columns:minmax(140px,auto) 1fr;gap:6px 16px;font-size:14px}
 .kv span{color:var(--muted)}
-.frame{width:100%;height:calc(100vh - 150px);min-height:460px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
-.hint{font-size:12px;color:var(--muted);margin:0 0 8px}
-.flag{border-left:3px solid var(--warn);padding-left:9px;color:var(--warn);font-size:12px;margin:0 0 10px}
-.flag.bad{border-color:var(--stop);color:var(--stop)}
-/* загрузки из Excel и сотрудники (02.10.2026): длинные таблицы прокручиваются внутри карточки */
-.scroll.tall{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:8px}
-.scroll.tall thead th{position:sticky;top:0;background:var(--card);z-index:1}
-tr.row-bad td{background:color-mix(in srgb,var(--stop) 11%,transparent)}
-tr.row-warn td{background:color-mix(in srgb,var(--warn) 10%,transparent)}
-td.notes{min-width:220px}
-td.notes span{display:block}td.notes .err{color:var(--stop)}td.notes .wrn{color:var(--warn)}td.notes .chg{color:var(--muted)}
-tr.tot td{font-weight:700;border-top:2px solid var(--line)}
-tr.edit td{background:var(--soft)}
-td.ctl{min-width:250px}td.ctl .btn{margin:0 2px 4px 0}
+.frame{width:100%;height:calc(100vh - 200px);min-height:480px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
+.hint{font-size:14px;color:var(--muted);margin:0 0 8px}
+.flag{border-left:3px solid var(--warn-fg);background:var(--warn-soft);padding:8px 12px;border-radius:0 10px 10px 0;color:var(--warn-fg);font-size:14px;margin:0 0 12px}
+.flag.bad{border-color:var(--danger-fg);background:var(--danger-soft);color:var(--danger-fg)}
+.scroll.tall{max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+.scroll.tall thead th{position:sticky;top:0;z-index:1}
+tr.row-bad td{background:var(--danger-soft)}tr.row-warn td{background:var(--warn-soft)}
+td.notes{min-width:220px}td.notes span{display:block}td.notes .err{color:var(--danger-fg)}td.notes .wrn{color:var(--warn-fg)}td.notes .chg{color:var(--muted)}
+tr.tot td{font-weight:700;border-top:2px solid var(--border)}
+tr.edit td{background:var(--surface-warm)}
+td.ctl{min-width:250px}td.ctl .btn{margin:0 4px 4px 0}
+#sTable td.ctl{min-width:300px;white-space:nowrap}
+.form{max-width:980px}
 td.nw{white-space:nowrap}
-.tile.bad b{color:var(--stop)}
-.secret{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:10px 0;padding:12px 14px;border:1px dashed var(--warn);border-radius:10px;background:var(--soft)}
-.secret code{font:600 24px var(--mono);letter-spacing:.08em;user-select:all;word-break:break-all}
+.tile.bad b{color:var(--danger-fg)}
+.secret{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:14px 0 0;padding:14px 16px;border:1px dashed var(--warn-fg);border-radius:var(--radius-sm);background:var(--warn-soft)}
+.secret code{font:600 24px var(--font-mono);letter-spacing:.08em;user-select:all;word-break:break-all;color:var(--fg)}
+.secret .flag{background:none;padding:0 0 0 10px}
 .seg{display:inline-flex;flex-wrap:wrap}
 .seg .btn{border-radius:0;margin-left:-1px}.seg .btn:first-child{border-radius:10px 0 0 10px;margin-left:0}.seg .btn:last-child{border-radius:0 10px 10px 0}
-.seg .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);-webkit-text-fill-color:var(--accent);position:relative}
+.seg .btn[aria-pressed="true"]{border-color:var(--accent-in);color:var(--accent-in);-webkit-text-fill-color:var(--accent-in);background:var(--accent-soft);position:relative}
+
+/* --- новые разделы: сотрудники, продукты, страховые случаи --- */
+fieldset{border:0;margin:0 0 4px;padding:0;min-width:0}
+legend{font:600 13px/18px var(--font-sans);color:var(--muted);padding:0;margin-bottom:8px;letter-spacing:.02em}
+.form{display:grid;gap:16px}
+.row1{display:grid;grid-template-columns:minmax(0,1fr);gap:12px 16px}
+.row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 16px}
+.form .go{justify-self:start;min-width:180px}
+.split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:16px;align-items:start}
+.tbl-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end;justify-content:space-between;margin-bottom:12px}
+.tbl-head h3{margin:0}
+.tbl-head label{width:min(360px,100%)}
+.count{font:500 14px var(--font-sans);color:var(--muted)}
+.years{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:end}
+.years label{width:160px}
+.ytag{display:inline-block;font:600 12px/18px var(--font-sans);color:var(--accent-in);background:var(--accent-soft);border-radius:999px;padding:2px 10px;margin-right:8px;vertical-align:2px}
+td.pname{color:var(--fg-2);min-width:180px;padding-top:20px}
+td.del{width:56px}
+.iconbtn{min-height:44px;min-width:44px;border-radius:10px;border:1px solid transparent;background:none;color:var(--muted);cursor:pointer;display:inline-grid;place-items:center}
+.iconbtn:hover{background:var(--danger-soft);color:var(--danger-fg)}
+.iconbtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.iconbtn:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+details.files-sub{margin-top:14px}
+details.files-sub summary{cursor:pointer;font-size:14px;color:var(--fg-2);min-height:32px}
+.actions.left{flex-direction:row;justify-content:flex-start}
+#pWork:empty{display:none}
+
 @media (max-width:860px){
-  :root{--rail:48px}
-  .app{grid-template-columns:var(--rail) minmax(0,1fr)}
-  .menu{display:none}
-  body.menu-view .menu{display:block;position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
-  body.menu-view main{display:none}
-  main{padding:14px 12px 40px}
-  body.section-view .back{display:inline-flex}
-  .frame{height:calc(100vh - 170px)}
-  h1{font-size:18px}
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side{position:sticky;top:0;z-index:20;height:auto;padding:8px 16px;border-right:0;border-bottom:1px solid var(--border)}
+  .brand{flex-direction:row;align-items:center;gap:10px;padding:0;min-height:48px}
+  .brand small{margin:0}
+  .menu-btn{display:inline-flex;position:absolute;right:16px;top:10px}
+  #nav{display:none;padding:8px 0 4px;max-height:calc(100vh - 70px);overflow-y:auto}
+  body.nav-open #nav{display:flex}
+  main{padding:20px 16px 48px}
+  h1{font-size:22px;line-height:28px}
+  .card{padding:16px}
+  .row2,.row3,.split{grid-template-columns:minmax(0,1fr)}
+  .frame{height:calc(100vh - 220px)}
 }
 </style>
 
 <div class="app">
-  <nav class="rail" id="rail" aria-label="Группы разделов"><div class="mark"><b>S</b></div></nav>
-  <nav class="menu" id="menu" aria-label="Разделы группы"></nav>
+  <aside class="side">
+    <div class="brand"><span class="logo"><b>INS</b><b>ON</b></span><small>Админка сюрвейера</small></div>
+    <button class="btn btn-secondary btn-sm menu-btn" id="menuBtn" type="button" aria-controls="nav" aria-expanded="false">Меню</button>
+    <nav id="nav" aria-label="Разделы админки"></nav>
+  </aside>
   <main id="main">
-    <button class="btn btn-secondary back" id="back" type="button">← Разделы группы</button>
-    <div class="head"><div><h1 id="title">Админка</h1><p class="why" id="why"></p></div><div id="tools"><a class="btn btn-secondary btn-sm" id="exitAdmin" href="/tg?mode=user" title="Открыть мини-приложение так, как его видит обычный сотрудник. Права не меняются."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg><span data-i18n="admin.exit">Выйти из админки</span></a></div></div>
+    <div class="head"><h1 id="title">Админка</h1><p class="why" id="why"></p></div>
     <div id="view"></div>
   </main>
 </div>
@@ -169,7 +226,7 @@ var num = function (n) { return n == null || n === "" ? "—" : Math.round(Numbe
 var pct = function (n) { return n == null ? "—" : Number(n).toFixed(3).replace(".", ",") + "%"; };
 var when = function (s) { return esc(String(s || "").replace("T", " ").slice(0, 16)); };
 
-/* Разделы. kind:"frame" — готовая страница во встроенном окне (тот же домен, сессия — cookie sid). */
+/* «Дополнительно»: прежние разделы админки без изменений. kind:"frame" — готовая страница во встроенном окне (тот же домен, сессия — cookie sid). */
 var NAV = [
  {id:"people", icon:"◉", short:"Люди", title:"Люди",
   why:"Кто работает в системе, кто ждёт подтверждения и кто когда входил.",
@@ -238,7 +295,10 @@ async function api(path, options) {
   var body = null;
   try { body = await r.json(); } catch (e) { body = null; }
   if (!r.ok) {
-    var d = body && body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : "";
+    var dd = body && body.detail, d = "";
+    if (typeof dd === "string") d = dd;
+    else if (dd && dd.message) d = dd.message + (Array.isArray(dd.errors) && dd.errors.length ? ": " + dd.errors.join("; ") : "");
+    else if (dd) d = JSON.stringify(dd);
     if (!d && body && body.errors && typeof body.errors === "object") {   /* 422 с ошибками по полям */
       d = Object.keys(body.errors).map(function (k) { return k + ": " + body.errors[k]; }).join("; ");
     }
@@ -1106,7 +1166,9 @@ function prod_preview(b) {
     }
   };
 }
+var PRODUCTS_CHANGED = null;   /* раздел «Продукты» обновляет свою таблицу после «Применить» */
 async function prod_list() {
+  if (typeof PRODUCTS_CHANGED === "function" && $("#prdTable")) PRODUCTS_CHANGED();
   var box = $("#pList"); if (!box) return;
   box.innerHTML = '<p class="hint">Загружаем справочник продуктов…</p>';
   try {
@@ -1625,67 +1687,489 @@ function bind_forms(el) {
   });
 }
 
-/* --------------------------------------------------------------- навигация */
-var narrow = function () { return window.matchMedia("(max-width:860px)").matches; };
-/* Свои классы ставим точечно: на странице может быть ещё и общее меню сервера,
-   которое держит на body свои классы (side-open, side-wide) — их стирать нельзя. */
-function view_mode(mode) {
-  document.body.classList.toggle("menu-view", mode === "menu");
-  document.body.classList.toggle("section-view", mode === "section");
-}
-var cur = {g: "people", s: "users"};
+/* =====================================================================================================
+   Четыре пункта записки заказчика (06.10.2026). Прежние разделы выше (V.*) живут в «Дополнительно».
+   ===================================================================================================== */
+var ICON = {
+  staff: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.7.7 2.8 2.4 3 5.2"/></svg>',
+  products: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/></svg>',
+  claims: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  more: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>',
+  exit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>',
+  chev: '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+  del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>'
+};
+var MAIN = [
+  {id: "staff", title: "Сотрудники", icon: ICON.staff,
+   why: "Заведите сотрудника: он сразу сможет войти по логину и временному паролю, а при первом входе задаст свой пароль."},
+  {id: "products", title: "Продукты", icon: ICON.products,
+   why: "Новый страховой продукт вручную или списком из Excel. Ниже — все продукты справочника."},
+  {id: "claims", title: "Страховые случаи", icon: ICON.claims,
+   why: "Число страховых случаев и сумма выплат по каждому продукту за три года — вручную или файлом Excel. Это исходные данные для калибровки ставок."}
+];
+function today_iso() { return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+function err_text(e) { return esc(e && e.message ? e.message : e); }
 
-function paint_rail() {
-  var r = $("#rail");
-  r.innerHTML = '<div class="mark"><b>S</b></div>' + NAV.map(function (g) {
-    return '<button type="button" data-g="' + g.id + '"' + (g.id === cur.g ? ' class="on"' : "") +
-      ' title="' + esc(g.title) + '"><i aria-hidden="true">' + g.icon + "</i><u>" + esc(g.short) + "</u></button>";
-  }).join("") +
-    /* выход в мини-апп обычным пользователем: права не меняются, это только вид (контракт — docs) */
-    '<a class="exit" href="/tg?mode=user" title="Выйти из админки: мини-приложение глазами сотрудника">' +
-    '<i aria-hidden="true">⎋</i><u>' + esc(window.T ? T("admin.exit_short", "Выйти") : "Выйти") + "</u></a>";
-  r.onclick = function (e) {
-    var b = e.target.closest("button[data-g]"); if (!b) return;
-    var g = NAV.filter(function (x) { return x.id === b.dataset.g; })[0];
-    if (narrow()) { cur.g = g.id; paint_rail(); paint_menu(); view_mode("menu"); }
-    else open_section(g.id, g.items[0].id);
-  };
+/* ---------- 1. Сотрудники ---------- */
+var STAFF = {d: null, q: ""};
+/* порядок полей — как в записке заказчика: Ф.И.О.; Должность; Департамент / Отдел / Филиал; Логин / Пароль; Телефон */
+var STAFF_FORM = [
+  ["Кто", [["full_name", "Ф.И.О.", true, "Иванов Иван Иванович"], ["position", "Должность", true, "андеррайтер"]]],
+  ["Где работает", [["department", "Департамент", true, "андеррайтинг"], ["unit", "Отдел", false, "имущество"],
+                    ["branch", "Филиал", false, "Ташкент"]]],
+  ["Вход", [["login", "Логин", true, "i.ivanov"], ["temp_password", "Пароль", false, "пусто — придумает система"],
+            ["phone", "Телефон", true, "+998 90 123 45 67"]]]
+];
+function staff_field(f, u) {
+  var k = f[0], v = u ? (u[k] || "") : (k === "phone" ? "+998 " : "");
+  var extra = k === "phone" ? ' type="tel" inputmode="tel"' : k === "login" ? ' autocapitalize="off" spellcheck="false"' +
+    (u ? " readonly" : "") : k === "temp_password" ? ' autocomplete="new-password"' : "";
+  return "<label><span>" + f[1] + (f[2] || k === "temp_password" ? "" : " <small>(необязательно)</small>") +
+    (k === "temp_password" ? " <small>(временный)</small>" : "") + "</span>" +
+    '<input name="' + k + '" value="' + esc(v) + '"' + (f[2] && !(u && k === "login") ? " required" : "") + extra +
+    ' placeholder="' + esc(f[3]) + '" autocomplete="off"></label>';
 }
-function paint_menu() {
-  var g = NAV.filter(function (x) { return x.id === cur.g; })[0];
-  $("#menu").innerHTML = "<h2>" + esc(g.title) + "</h2><p>" + esc(g.why) + "</p>" + g.items.map(function (it) {
-    return '<a href="#' + g.id + "/" + it.id + '"' + (it.id === cur.s ? ' class="on"' : "") + ">" + esc(it.title) + "</a>";
+function staff_form_html(u) {
+  return STAFF_FORM.map(function (g) {
+    var fs = g[1].filter(function (f) { return !(u && (f[0] === "login" || f[0] === "temp_password")); });
+    return '<div class="row' + (u && g[0] === "Вход" ? 3 : fs.length) + '">' + fs.map(function (f) { return staff_field(f, u); }).join("") + "</div>";
   }).join("");
 }
+function staff_where(u) {
+  return [u.department, u.unit, u.branch].filter(Boolean).map(esc).join(" / ") || "—";
+}
+function staff_rows() {
+  var q = STAFF.q.toLowerCase();
+  var items = (STAFF.d.items || []).filter(function (u) {
+    return !q || [u.full_name, u.position, u.department, u.unit, u.branch, u.login, u.phone].join(" ").toLowerCase().indexOf(q) >= 0;
+  });
+  $("#sCount").textContent = items.length === STAFF.d.items.length ? "всего " + items.length : "найдено " + items.length + " из " + STAFF.d.items.length;
+  return items.map(function (u) {
+    var temp = u.must_change_password ? ' <span class="v warn" title="Сотрудник ещё не сменил временный пароль">временный пароль</span>' : "";
+    var off = u.status && u.status !== "активен" ? ' <span class="v dim">' + esc(u.status) + "</span>" : "";
+    return "<tr><td>" + esc(u.full_name || "—") + off + "</td><td>" + esc(u.position || "—") + "</td><td>" + staff_where(u) +
+      "</td><td>" + esc(u.login) + temp + '</td><td class="nw">' + esc(u.phone || "—") + '</td><td class="ctl">' +
+      (STAFF.d.can_manage ? '<button class="btn btn-secondary btn-sm" type="button" data-sedit="' + u.id + '">Изменить</button>' +
+        '<button class="btn btn-secondary btn-sm" type="button" data-sreset="' + u.id + '">Сбросить пароль</button>' : "—") +
+      "</td></tr>";
+  });
+}
+function staff_table() {
+  var b = $("#sTable"); if (!b) return;
+  b.innerHTML = tbl(["Ф.И.О.", "Должность", "Департамент / Отдел / Филиал", "Логин", "Телефон", ""], staff_rows(),
+    STAFF.q ? "Никого не нашли — измените поиск" : "Сотрудников пока нет");
+}
+async function staff_reload(note) {
+  try { STAFF.d = await api("/tg/users"); } catch (e) { $("#sTable").innerHTML = fail(e); return; }
+  $("#sOut").innerHTML = note || "";
+  staff_table();
+}
+V.main_staff = async function (el) {
+  STAFF.d = await api("/tg/users");
+  el.innerHTML = (STAFF.d.can_manage ? '<div class="card"><h3>Добавить сотрудника</h3>' +
+    '<p class="note">Сотрудник получает роль «сотрудник» и входит сразу. Пароль можно не задавать — система придумает его и покажет один раз.</p>' +
+    '<form class="form" id="sAdd" autocomplete="off">' + staff_form_html(null) +
+    '<button class="btn btn-primary go" type="submit">Добавить</button></form>' +
+    '<div class="msg" id="sAddMsg" role="status"></div><div id="sSecret"></div></div>'
+    : '<p class="flag">Заводить сотрудников может только администратор. Список ниже — только для чтения.</p>') +
+    '<div class="card"><div class="tbl-head"><div><h3>Сотрудники</h3><span class="count" id="sCount"></span></div>' +
+    '<label>Поиск<input id="sQ" placeholder="имя, логин, отдел или телефон" value="' + esc(STAFF.q) + '"></label></div>' +
+    '<div id="sOut"></div><div id="sTable"></div><div class="msg" id="sMsg" role="status"></div></div>';
+  staff_table();
+  /* поиск перерисовывает только таблицу — поле ввода и курсор остаются на месте */
+  $("#sQ").oninput = function (e) { STAFF.q = e.target.value || ""; staff_table(); };
+  var add = $("#sAdd");
+  if (add) add.onsubmit = async function (e) {
+    e.preventDefault();
+    var m = $("#sAddMsg"), body = {};
+    new FormData(add).forEach(function (v, k) { body[k] = String(v).trim(); });
+    m.className = "msg"; m.textContent = "Заводим сотрудника…"; $("#sSecret").innerHTML = "";
+    try {
+      var r = await send("/tg/users/manual", "POST", body);
+      add.reset(); add.elements["phone"].value = "+998 ";
+      m.className = "msg good";
+      m.textContent = "Сотрудник «" + (r.user.full_name || r.user.login) + "» добавлен." +
+        (r.temp_password ? "" : " Пароль вы задали сами — передайте его сотруднику лично.");
+      if (r.temp_password) $("#sSecret").innerHTML = staff_secret(r.user.login, r.temp_password, "Временный пароль для " + (r.user.full_name || r.user.login));
+      staff_reload();
+    } catch (err) { m.className = "msg bad"; m.textContent = "Сотрудник не добавлен: " + err.message + "."; }
+  };
+  el.onclick = async function (e) {
+    var c = e.target.closest("button[data-copy]");
+    if (c) return copy_text(c.dataset.copy, c);
+    if (e.target.closest("button[data-scancel]")) { var o = el.querySelector("tr.edit"); if (o) o.remove(); return; }
+    var b = e.target.closest("button[data-sedit],button[data-sreset]"); if (!b) return;
+    var id = b.dataset.sedit || b.dataset.sreset, m = $("#sMsg");
+    var u = (STAFF.d.items || []).filter(function (x) { return String(x.id) === String(id); })[0] || {};
+    if (b.dataset.sedit) {
+      var was = el.querySelector("tr.edit"); if (was) was.remove();
+      var tr = document.createElement("tr"); tr.className = "edit";
+      tr.innerHTML = '<td colspan="6"><b>Изменить: ' + esc(u.full_name || u.login) + '</b><form class="form" style="margin-top:12px" autocomplete="off">' +
+        staff_form_html(u) + '<div class="actions left"><button class="btn btn-primary" type="submit">Сохранить изменения</button>' +
+        '<button class="btn btn-secondary" type="button" data-scancel="1">Отменить</button></div></form><div class="msg" role="status"></div></td>';
+      b.closest("tr").after(tr);
+      tr.querySelector("input").focus();
+      tr.querySelector("form").onsubmit = async function (ev) {
+        ev.preventDefault();
+        var f = ev.target, em = tr.querySelector(".msg"), diff = {};
+        ["full_name", "position", "department", "unit", "branch", "phone"].forEach(function (k) {
+          var v = f.elements[k].value.trim();
+          if (v !== String(u[k] || "")) diff[k] = v;
+        });
+        if (!Object.keys(diff).length) { em.className = "msg"; em.textContent = "Ничего не изменилось — сохранять нечего."; return; }
+        em.className = "msg"; em.textContent = "Сохраняем…";
+        try {
+          var r = await send("/tg/users/" + id, "PUT", diff);
+          staff_reload('<p class="msg good">Карточка «' + esc(r.user.full_name || r.user.login) + "» сохранена" +
+            (r.changed && r.changed.length ? ": изменено — " + esc(r.changed.map(function (k) { return STAFF_NAMES[k] || k; }).join(", ")) : "") + ".</p>");
+        } catch (err) { em.className = "msg bad"; em.textContent = "Не сохранилось: " + err.message + "."; }
+      };
+      return;
+    }
+    if (!confirm("Сбросить пароль сотруднику «" + (u.full_name || u.login) + "»?\n\nТекущий пароль перестанет действовать. " +
+                 "Система выдаст временный пароль — передайте его сотруднику лично.")) return;
+    m.className = "msg"; m.textContent = "Сбрасываем пароль…";
+    try {
+      var r = await send("/tg/users/" + id + "/reset-password", "POST", {});
+      m.textContent = "";
+      staff_reload(staff_secret(r.login, r.temp_password, "Новый временный пароль для " + (u.full_name || r.login)));
+    } catch (err) { m.className = "msg bad"; m.textContent = "Пароль не сброшен: " + err.message + "."; }
+  };
+};
+
+/* ---------- 2. Продукты ---------- */
+/* Добавление — те же точки, что у прежней карточки «Новый продукт»: POST /admin/products (код, название, классы,
+   текст тарифа «0,05%»; продукт создаётся в статусе «тест»), затем минимальная ставка и тип ставки — новой версией
+   PUT /reference/min-rates/{код} с сегодняшней датой (app/min_rates.py). Тип ставки хранится вместе с минимумом. */
+var PRD = {items: [], q: ""};
+var PRD_TYPE = {annual: "годовая", fixed: "фиксированная"};
+function prd_num(s) {
+  s = String(s == null ? "" : s).replace(/[\s  ]/g, "").replace(",", ".");
+  return s === "" ? null : (/^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN);
+}
+function prd_pct(n) { return n == null ? "—" : String(Number(n)).replace(".", ",") + "%"; }
+async function prd_load() {
+  var rows = await api("/reference/products"), mr = {};
+  try { (await api("/reference/min-rates")).items.forEach(function (x) { mr[x.code] = x; }); } catch (e) { mr = {}; }
+  PRD.items = rows.map(function (p) {
+    var m = mr[p.code] || {};
+    return {code: p.code, name: p.name, classes: p.classes || "", rate: p.rate_text || "", status: p.status || "",
+            min: m.min_rate_pct, type: m.min_rate_pct == null ? null : m.rate_type, statutory: m.editable === false};
+  });
+}
+function prd_table() {
+  var box = $("#prdTable"); if (!box) return;
+  var q = PRD.q.toLowerCase();
+  var rows = PRD.items.filter(function (p) {
+    return !q || String(p.code).toLowerCase().indexOf(q) >= 0 || String(p.name || "").toLowerCase().indexOf(q) >= 0 ||
+      String(p.classes).split(",").indexOf(q) >= 0;
+  });
+  $("#prdCount").textContent = rows.length === PRD.items.length ? "всего " + rows.length : "найдено " + rows.length + " из " + PRD.items.length;
+  box.innerHTML = tbl(["Код", "Название", "Классы", 'Ставка', "Тип ставки", 'Минимум'],
+    rows.map(function (p) {
+      return "<tr><td class=\"nw\">" + esc(p.code) + "</td><td>" + esc(p.name) +
+        (p.status === "тест" ? ' <span class="v warn" title="Новый продукт: до утверждения виден только андеррайтеру">тест</span>' : "") +
+        "</td><td>" + esc(String(p.classes).split(",").join(", ") || "—") + '</td><td class="n">' + esc(p.rate || "—") + "</td><td>" +
+        (p.statutory ? '<span class="v dim">по нормативному акту</span>' : esc(p.type ? PRD_TYPE[p.type] || p.type : "—")) +
+        '</td><td class="n">' + (p.statutory ? "—" : prd_pct(p.min)) + "</td></tr>";
+    }), PRD.q ? "Продуктов не найдено — измените поиск" : "Продуктов пока нет", "tall");
+}
+V.main_products = async function (el) {
+  await prd_load();
+  el.innerHTML = '<div class="split"><div class="card"><h3>Добавить страховой продукт</h3>' +
+    '<p class="note">Новый продукт создаётся в статусе «тест»: до утверждения его видит только андеррайтер. Минимальная ставка и тип ' +
+    "ставки записываются версией с сегодняшней датой — прежние расчёты остаются на своих ставках.</p>" +
+    '<form class="form" id="prdAdd" autocomplete="off">' +
+    '<div class="row2"><label>Код продукта<input name="code" required placeholder="0836" spellcheck="false"></label>' +
+    '<label>Название<input name="name" required placeholder="Страхование имущества предприятий"></label></div>' +
+    '<div class="row3"><label>Тариф, ставка %<input name="rate" inputmode="decimal" placeholder="0,15"></label>' +
+    '<label>Тип ставки<select name="rate_type"><option value="annual">годовая</option><option value="fixed">фиксированная</option></select></label>' +
+    '<label>Минимальная ставка, %<input name="min" inputmode="decimal" placeholder="0,05"></label></div>' +
+    '<div class="row1"><label>Классы <small>через запятую, например 8, 13</small><input name="classes" required placeholder="8" spellcheck="false"></label></div>' +
+    '<button class="btn btn-primary go" type="submit">Добавить</button></form><div class="msg" id="prdMsg" role="status"></div></div>' +
+    '<div class="card" id="pImp"><h3>Импорт из Excel</h3>' +
+    '<p class="note">Когда продуктов много: скачайте шаблон, заполните и загрузите. Сначала покажем, что изменится, — в справочник ' +
+    "запишем только после «Применить» и только строки без ошибок. Из справочника ничего не удаляется.</p>" +
+    '<div class="bar"><a class="btn btn-secondary" href="/reference/products/template.xlsx" download>Скачать шаблон</a>' +
+    '<button class="btn btn-primary" type="button" id="pPick">Загрузить</button>' +
+    '<input type="file" id="pFile" accept=".xlsx,.xlsm" hidden></div></div></div>' +
+    '<div id="pWork" class="card"></div>' +
+    '<div class="card"><div class="tbl-head"><div><h3>Продукты</h3><span class="count" id="prdCount"></span></div>' +
+    '<label>Поиск<input id="prdQ" placeholder="код, название или класс" value="' + esc(PRD.q) + '"></label></div>' +
+    '<div id="prdTable"></div></div>';
+  prd_table();
+  $("#prdQ").oninput = function (e) { PRD.q = e.target.value.trim(); prd_table(); };
+  /* импорт: те же функции, что в прежней админке (prod_preview); после «Применить» prod_list зовёт PRODUCTS_CHANGED */
+  $("#pPick").onclick = function () { $("#pFile").value = ""; $("#pFile").click(); };
+  $("#pFile").onchange = async function () {
+    var f = this.files[0], w = $("#pWork");
+    if (!f) return;
+    w.innerHTML = '<p class="hint">Разбираем файл «' + esc(f.name) + "»…</p>";
+    try { prod_preview(await upload_xlsx("/reference/products/import", f)); }
+    catch (e) { w.innerHTML = '<p class="flag bad">Файл не принят: ' + err_text(e) + ". Проверьте, что это шаблон из кнопки «Скачать шаблон», и загрузите снова.</p>"; }
+  };
+  PRODUCTS_CHANGED = async function () { try { await prd_load(); prd_table(); } catch (e) { /* таблица останется прежней */ } };
+  var add = $("#prdAdd");
+  add.onsubmit = async function (e) {
+    e.preventDefault();
+    var m = $("#prdMsg"), f = add.elements;
+    var code = f.code.value.trim(), name = f.name.value.trim(), rate = prd_num(f.rate.value), min = prd_num(f.min.value);
+    var classes = f.classes.value.split(/[,;\s]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var bad = [];
+    if (!code) bad.push("укажите код продукта");
+    if (!name) bad.push("укажите название");
+    if (!classes.length) bad.push("укажите хотя бы один класс");
+    if (rate !== null && (isNaN(rate) || rate > 100)) bad.push("тариф — число от 0 до 100, например 0,15");
+    if (min !== null && (isNaN(min) || min > 100)) bad.push("минимальная ставка — число от 0 до 100, например 0,05");
+    m.className = "msg";
+    if (bad.length) { m.className = "msg bad"; m.textContent = "Продукт не добавлен: " + bad.join("; ") + "."; return; }
+    var same = PRD.items.filter(function (p) { return p.code === code; })[0];
+    if (same && !confirm("Продукт с кодом " + code + " уже есть: «" + same.name + "».\n\nЗаменить его название, классы и тариф? " +
+                         "Статус станет «тест».")) { m.textContent = "Не добавлено: продукт с таким кодом остался как был."; return; }
+    m.textContent = "Добавляем продукт…";
+    try {
+      await send("/admin/products", "POST", {code: code, name: name, classes: classes,
+        rate_text: rate === null ? "" : String(rate).replace(".", ",") + "%"});
+    } catch (err) { m.className = "msg bad"; m.textContent = "Продукт не добавлен: " + err.message + "."; return; }
+    var tail = "";
+    if (min !== null) {
+      try {
+        await send("/reference/min-rates/" + encodeURIComponent(code), "PUT", {min_rate_pct: min, rate_type: f.rate_type.value,
+          effective_from: today_iso(), note: "задано при добавлении продукта"});
+        tail = " Минимальная ставка " + prd_pct(min) + ", " + PRD_TYPE[f.rate_type.value] + ", действует с сегодняшнего дня.";
+      } catch (err) {
+        m.className = "msg bad";
+        m.textContent = "Продукт " + code + " добавлен, но минимальная ставка не записана: " + err.message +
+          ". Задайте её в «Дополнительно → Минимальные ставки страховщика».";
+        PRODUCTS_CHANGED(); return;
+      }
+    } else if (f.rate_type.value === "fixed") {
+      tail = " Тип ставки не записан: он хранится вместе с минимальной ставкой — укажите её, когда она будет известна.";
+    }
+    m.className = "msg good";
+    m.textContent = "Продукт " + code + " «" + name + "» добавлен в статусе «тест»." + tail;
+    add.reset();
+    PRD.q = code; $("#prdQ").value = code;
+    PRODUCTS_CHANGED();
+  };
+};
+
+/* ---------- 3. Страховые случаи ---------- */
+/* Ручной ввод — итог года по продукту (число случаев и сумма выплат): GET/PUT /claims/yearly (app/claims_import.py).
+   Сервер раскладывает итог на строки claims — по одной на случай, — поэтому сводка и калибровка видят ровно
+   введённые число и сумму. Файл Excel — построчные дела (GET /claims/template.xlsx, POST /claims/import → apply). */
+var CY = {years: null, data: {}, products: null};
+function cy_default() { var y = new Date().getFullYear(); return [y - 3, y - 2, y - 1]; }
+function cy_name(code) {
+  var p = (CY.products || []).filter(function (x) { return x.code === code; })[0];
+  return p ? p.name : "";
+}
+function cy_row(y, r) {
+  r = r || {};
+  return '<tr data-y="' + y + '"><td><input data-f="code" list="cyProducts" value="' + esc(r.product_code || "") +
+    '" placeholder="0807" spellcheck="false" aria-label="Код продукта" style="max-width:130px"></td>' +
+    '<td class="pname" data-f="name">' + esc(r.product_name || cy_name(r.product_code || "") || "—") + "</td>" +
+    '<td><input data-f="cases" inputmode="numeric" value="' + esc(r.cases == null ? "" : r.cases) +
+    '" aria-label="Число страховых случаев" style="max-width:150px;text-align:right;font-family:var(--mono)"></td>' +
+    '<td><input data-f="amount" class="fin-amt" inputmode="decimal" value="' + esc(r.amount == null ? "" : fin_money(r.amount)) +
+    '" aria-label="Сумма, сум" style="text-align:right;font-family:var(--mono)"></td>' +
+    '<td class="del"><button class="iconbtn" type="button" data-cydel="1" title="Убрать строку" aria-label="Убрать строку">' + ICON.del + "</button></td></tr>";
+}
+function cy_block(i) {
+  var y = CY.years[i], d = CY.data[y] || {manual: [], files: []};
+  var rows = d.manual.length ? d.manual : [{}];
+  var files = d.files || [];
+  var fc = files.reduce(function (a, x) { return a + x.cases; }, 0), fs = files.reduce(function (a, x) { return a + x.amount; }, 0);
+  return '<div class="tbl-head"><h3><span class="ytag">' + (i + 1) + '-й год</span>' + y + "</h3>" +
+    '<span class="count">' + (d.manual.length ? "введено продуктов: " + d.manual.length : "ручных данных пока нет") + "</span></div>" +
+    '<div class="scroll"><table><thead><tr><th>Код продукта</th><th>Название</th><th>Число страховых случаев</th>' +
+    '<th>Сумма, сум</th><th><span class="hint" style="margin:0">&nbsp;</span></th></tr></thead><tbody>' +
+    rows.map(function (r) { return cy_row(y, r); }).join("") + "</tbody></table></div>" +
+    '<div class="actions left"><button class="btn btn-secondary" type="button" data-cyadd="' + y + '">Добавить строку</button>' +
+    '<button class="btn btn-primary" type="button" data-cysave="' + y + '">Сохранить ' + y + " год</button></div>" +
+    '<div class="msg" data-cymsg="' + y + '" role="status"></div>' +
+    (files.length ? '<details class="files-sub"><summary>Ещё из загруженных файлов за ' + y + " год: " + num(fc) + " случ. на " + money(fs) +
+      "</summary>" + tbl(["Код", "Название", 'Случаев', 'Сумма'], files.map(function (x) {
+        return "<tr><td>" + esc(x.product_code) + "</td><td>" + esc(x.product_name || "—") + '</td><td class="n">' + num(x.cases) +
+          '</td><td class="n">' + money(x.amount) + "</td></tr>"; })) +
+      '<p class="hint" style="margin-top:8px">Это построчные дела из Excel. Ручной ввод выше их не заменяет — в сводке они складываются.</p></details>' : "");
+}
+async function cy_load(i) {
+  var box = $("#cyBlock" + i), y = CY.years[i];
+  box.innerHTML = '<p class="hint">Загружаем ' + y + " год…</p>";
+  try {
+    var d = await api("/claims/yearly?years=" + y);
+    CY.data[y] = d.years[0];
+    box.innerHTML = cy_block(i);
+  } catch (e) { box.innerHTML = fail(e); }
+}
+function cy_read(tr) {
+  var g = function (f) { return tr.querySelector('[data-f="' + f + '"]').value.trim(); };
+  return {code: g("code"), cases: g("cases"), amount: g("amount")};
+}
+async function cy_save(y, box) {
+  var m = box.querySelector('[data-cymsg="' + y + '"]'), rows = [], bad = [];
+  box.querySelectorAll("tbody tr").forEach(function (tr, k) {
+    var r = cy_read(tr);
+    if (!r.code && !r.cases && !r.amount) return;              /* пустая строка — не ошибка, просто пропускаем */
+    var n = r.cases === "" ? NaN : Number(r.cases.replace(/\s/g, "")), a = fin_parse(r.amount);
+    var why = [];
+    if (!r.code) why.push("нет кода продукта");
+    else if (CY.products && !cy_name(r.code)) why.push("кода " + r.code + " нет в справочнике");
+    if (!Number.isInteger(n) || n < 0) why.push("число случаев — целое, не меньше 0");
+    if (a == null || isNaN(a)) why.push("сумма — число, например 125 000 000");
+    if (why.length) bad.push("строка " + (k + 1) + ": " + why.join(", "));
+    rows.push({product_code: r.code, cases: n, amount: a});
+  });
+  m.className = "msg";
+  if (bad.length) { m.className = "msg bad"; m.innerHTML = "Год не сохранён — исправьте:<ul>" + bad.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>"; return; }
+  if (!rows.length && !(CY.data[y] && CY.data[y].manual.length)) { m.textContent = "Сохранять нечего: заполните хотя бы одну строку."; return; }
+  if (!rows.length && !confirm("Все строки пустые. Удалить ручные данные за " + y + " год?")) return;
+  m.textContent = "Сохраняем " + y + " год…";
+  try {
+    var r = await send("/claims/yearly", "PUT", {year: y, rows: rows});
+    var i = CY.years.indexOf(y);
+    await cy_load(i);
+    var m2 = $("#cyBlock" + i).querySelector('[data-cymsg="' + y + '"]');
+    m2.className = "msg good";
+    m2.textContent = "Сохранено: " + r.products + " продукт., " + num(r.cases) + " случ." + (r.replaced ? " Прежние ручные данные года заменены." : "");
+    claims_summary();
+  } catch (e) { m.className = "msg bad"; m.textContent = "Год не сохранён: " + e.message + "."; }
+}
+V.main_claims = async function (el) {
+  CY.years = CY.years || cy_default();
+  if (!CY.products) { try { CY.products = (await api("/reference/products")).map(function (p) { return {code: p.code, name: p.name}; }); } catch (e) { CY.products = null; } }
+  var now = new Date().getFullYear(), opts = function (sel) {
+    var o = ""; for (var y = now; y >= now - 15; y--) o += '<option value="' + y + '"' + (y === sel ? " selected" : "") + ">" + y + "</option>";
+    return o;
+  };
+  CLM.years = 3;
+  el.innerHTML = '<datalist id="cyProducts">' + (CY.products || []).map(function (p) {
+      return '<option value="' + esc(p.code) + '">' + esc(p.name) + "</option>"; }).join("") + "</datalist>" +
+    '<div class="card"><h3>Годы</h3><p class="note">Выберите три года. Для каждого введите по продукту число страховых случаев и сумму выплат ' +
+    "или загрузите файл Excel ниже. Сохранение года заменяет его ручные данные; дела из файлов не трогаются.</p>" +
+    '<div class="years">' + CY.years.map(function (y, i) {
+      return "<label>" + (i + 1) + '-й год<select data-cyyear="' + i + '">' + opts(y) + "</select></label>"; }).join("") + "</div></div>" +
+    CY.years.map(function (y, i) { return '<div class="card" id="cyBlock' + i + '"></div>'; }).join("") +
+    '<div class="card"><h3>Загрузка из Excel</h3>' +
+    '<p class="note">В шаблоне одна строка — одно дело: номер дела, код продукта, дата события, статус, заявлено и выплачено. ' +
+    "Повторная загрузка того же номера дела обновляет запись. ФИО, паспорт, телефон и адрес не указывайте — такие колонки не загружаются.</p>" +
+    '<div class="bar"><a class="btn btn-secondary" href="/claims/template.xlsx" download>Скачать шаблон</a>' +
+    '<button class="btn btn-primary" type="button" id="cPick">Загрузить</button>' +
+    '<input type="file" id="cFile" accept=".xlsx,.xlsm" hidden></div><div id="cWork"></div></div>' +
+    '<div class="card"><h3>Сводка за 3 года по продуктам</h3><p class="note" id="cPeriod">Загружаем…</p>' +
+    '<div id="cSum"></div><p class="hint" id="cNote" style="margin-top:8px"></p>' +
+    '<details class="files-sub"><summary>Последние загрузки файлов</summary><div id="cBatches"></div></details></div>';
+  CY.years.forEach(function (y, i) { cy_load(i); });
+  claims_summary();
+  $("#cPick").onclick = function () { $("#cFile").value = ""; $("#cFile").click(); };
+  $("#cFile").onchange = async function () {
+    var f = this.files[0], w = $("#cWork");
+    if (!f) return;
+    w.innerHTML = '<p class="hint">Разбираем файл «' + esc(f.name) + "»…</p>";
+    try { claims_preview(await upload_xlsx("/claims/import", f)); }
+    catch (e) { w.innerHTML = '<p class="flag bad">Файл не принят: ' + err_text(e) + ". Проверьте, что это шаблон из кнопки «Скачать шаблон», и загрузите снова.</p>"; }
+  };
+  el.onchange = function (e) {
+    var s = e.target.closest("select[data-cyyear]");
+    if (s) {
+      var i = Number(s.dataset.cyyear), y = Number(s.value);
+      if (CY.years.indexOf(y) >= 0 && CY.years.indexOf(y) !== i) {
+        s.value = CY.years[i];
+        alert(y + " год уже выбран в другом блоке. Выберите другой год.");
+        return;
+      }
+      CY.years[i] = y; cy_load(i); return;
+    }
+  };
+  el.oninput = function (e) {
+    var t = e.target;
+    if (t.dataset && t.dataset.f === "code") {         /* название подставляем в соседнюю ячейку, поле не трогаем */
+      var cell = t.closest("tr").querySelector('[data-f="name"]'), nm = cy_name(t.value.trim());
+      cell.textContent = nm || (t.value.trim() ? "нет в справочнике" : "—");
+    }
+  };
+  el.addEventListener("focusout", function (e) { if (e.target.classList && e.target.classList.contains("fin-amt")) fin_fmt(e.target); });
+  el.onclick = function (e) {
+    var b = e.target.closest("[data-cyadd],[data-cysave],[data-cydel]"); if (!b) return;
+    if (b.dataset.cydel) {
+      var tb = b.closest("tbody"), tr = b.closest("tr");
+      if (tb.children.length > 1) tr.remove(); else tr.querySelectorAll("input").forEach(function (x) { x.value = ""; });
+      return;
+    }
+    var y = Number(b.dataset.cyadd || b.dataset.cysave), box = b.closest(".card");
+    if (b.dataset.cyadd) {
+      box.querySelector("tbody").insertAdjacentHTML("beforeend", cy_row(y, {}));
+      var rs = box.querySelectorAll("tbody tr"); rs[rs.length - 1].querySelector("input").focus();
+      return;
+    }
+    cy_save(y, box);
+  };
+};
+
+/* --------------------------------------------------------------- навигация */
+var cur = {g: "main", s: "staff"};
+var MORE_OPEN = false;
+function paint_nav() {
+  var inMore = cur.g !== "main";
+  var open = MORE_OPEN || inMore;
+  $("#nav").innerHTML = MAIN.map(function (s) {
+    return '<a class="nv' + (cur.g === "main" && cur.s === s.id ? " on" : "") + '" href="#main/' + s.id + '">' + s.icon + "<span>" + s.title + "</span></a>";
+  }).join("") +
+    '<button class="nv' + (inMore ? " on" : "") + '" type="button" id="moreBtn" aria-expanded="' + open + '" aria-controls="moreList">' +
+    ICON.more + "<span>Дополнительно</span>" + ICON.chev + "</button>" +
+    '<div class="sub" id="moreList"' + (open ? "" : " hidden") + ">" + NAV.map(function (g) {
+      return "<h4>" + esc(g.title) + "</h4>" + g.items.map(function (it) {
+        return '<a href="#' + g.id + "/" + it.id + '"' + (cur.g === g.id && cur.s === it.id ? ' class="on" aria-current="page"' : "") + ">" + esc(it.title) + "</a>";
+      }).join("");
+    }).join("") + "</div>" +
+    '<div class="foot"><div class="who" id="who">' + esc(WHO) + "</div>" +
+    '<button class="nv" type="button" id="logout">' + ICON.exit + "<span>Выход</span></button></div>";
+  $("#moreBtn").onclick = function () { MORE_OPEN = !(this.getAttribute("aria-expanded") === "true"); paint_nav(); };
+  $("#logout").onclick = async function () {
+    try { await send("/auth/logout", "POST", {}); } catch (e) { /* сессия уже закрыта — всё равно уходим на вход */ }
+    location.href = "/login?next=" + encodeURIComponent("/admin");
+  };
+}
+var WHO = "";
 async function open_section(gid, sid, arg) {
-  var g = NAV.filter(function (x) { return x.id === gid; })[0] || NAV[0];
-  var s = g.items.filter(function (x) { return x.id === sid; })[0] || g.items[0];
-  cur = {g: g.id, s: s.id};
-  if (location.hash !== "#" + g.id + "/" + s.id) location.hash = g.id + "/" + s.id;
-  view_mode(narrow() ? "section" : "");
-  paint_rail(); paint_menu();
+  var s, fn;
+  if (gid === "main") {
+    s = MAIN.filter(function (x) { return x.id === sid; })[0] || MAIN[0];
+    cur = {g: "main", s: s.id};
+  } else {
+    var g = NAV.filter(function (x) { return x.id === gid; })[0];
+    if (!g) return open_section("main", "staff");
+    s = g.items.filter(function (x) { return x.id === sid; })[0] || g.items[0];
+    cur = {g: g.id, s: s.id};
+  }
+  if (location.hash !== "#" + cur.g + "/" + cur.s) history.replaceState(null, "", "#" + cur.g + "/" + cur.s);
+  document.body.classList.remove("nav-open"); $("#menuBtn").setAttribute("aria-expanded", "false");
+  paint_nav();
   $("#title").textContent = s.title;
   $("#why").textContent = s.why || "";
+  document.title = s.title + " — админка INSON";
   var view = $("#view");
-  view.onclick = null;
+  view.onclick = null; view.onchange = null; view.oninput = null;
+  view.replaceWith(view = view.cloneNode(false));         /* снимаем слушатели прежнего раздела (addEventListener) */
   view.innerHTML = '<p class="hint">Загружаем раздел…</p>';
-  var fn = V[g.id + "_" + s.id];
+  fn = V[cur.g + "_" + cur.s];
   if (!fn) { view.innerHTML = '<p class="hint">Раздел пока пуст.</p>'; return; }
   try { await fn(view, arg); } catch (e) { view.innerHTML = fail(e); }
   if (window.i18nPaint) window.i18nPaint(view);
 }
-$("#back").onclick = function () { view_mode("menu"); };
+$("#menuBtn").onclick = function () {
+  var on = !document.body.classList.contains("nav-open");
+  document.body.classList.toggle("nav-open", on); this.setAttribute("aria-expanded", String(on));
+};
 window.addEventListener("hashchange", function () {
   var p = location.hash.replace("#", "").split("/");
   if (p[0] && (p[0] !== cur.g || p[1] !== cur.s)) open_section(p[0], p[1]);
 });
-window.addEventListener("resize", function () {
-  if (!narrow()) view_mode("");
-  else if (!document.body.classList.contains("menu-view")) view_mode("section");
-});
 (function () {
   var p = location.hash.replace("#", "").split("/");
-  open_section(p[0] || "people", p[1] || "users");
+  open_section(p[0] || "main", p[1] || "staff");
+  api("/auth/me").then(function (u) { WHO = "Вы вошли: " + (u.full_name || u.login); var w = $("#who"); if (w) w.textContent = WHO; }).catch(function () {});
 })();
 </script>
-<script src="/theme.js"></script>
+</html>

@@ -430,6 +430,32 @@ def check_claims(code: str):
     ok("случай без вида объекта — группа «не указан»", gna.get("m", 0) >= 1, gna)
 
 
+def check_yearly(code: str):
+    """Итоги года по продукту — ручной ввод в админке (06.10.2026): GET/PUT /claims/yearly."""
+    y = date.today().year - 1
+    body = {"year": y, "rows": [{"product_code": code, "cases": 3, "amount": 1000}]}
+    st, r, _ = call("PUT", "/claims/yearly", body, who="сотрудник")
+    ok("PUT /claims/yearly сотруднику закрыт", st in (401, 403), (st, r))
+    st, r, _ = call("PUT", "/claims/yearly", {"year": y, "rows": [{"product_code": "НЕТ-ТАКОГО", "cases": 1, "amount": 5}]},
+                    who="админ")
+    ok("неизвестный продукт → 422 с понятной строкой", st == 422 and "нет в справочнике" in json.dumps(r, ensure_ascii=False), (st, r))
+    st, r, _ = call("PUT", "/claims/yearly", body, who="админ")
+    ok("PUT /claims/yearly: 3 случая записаны", st == 200 and r["cases"] == 3 and r["event_date"] == f"{y}-12-31", (st, r))
+    st, d, _ = call("GET", f"/claims/yearly?years={y}", who="админ")
+    m = [x for x in d["years"][0]["manual"] if x["product_code"] == code]
+    ok("GET /claims/yearly: число случаев и сумма как введены (остаток округления сходится)",
+       st == 200 and m and m[0]["cases"] == 3 and abs(m[0]["amount"] - 1000) < 1e-9, d)
+    st, r, _ = call("PUT", "/claims/yearly", {"year": y, "rows": [{"product_code": code, "cases": 2, "amount": 500}]}, who="админ")
+    st, d, _ = call("GET", f"/claims/yearly?years={y}", who="админ")
+    m = [x for x in d["years"][0]["manual"] if x["product_code"] == code]
+    ok("повторное сохранение года заменяет ручные итоги, а не добавляет", r["replaced"] == 3 and m[0]["cases"] == 2
+       and abs(m[0]["amount"] - 500) < 1e-9, (r, m))
+    st, s, _ = call("GET", "/claims/summary?years=3", who="админ")
+    ok("сводка видит ручные итоги", st == 200 and any(x["product_code"] == code and x["cases"] >= 2 for x in s["items"]), s["items"][:3])
+    st, r, _ = call("PUT", "/claims/yearly", {"year": date.today().year + 1, "rows": []}, who="админ")
+    ok("будущий год → 422", st == 422, (st, r))
+
+
 def main():
     with temp_db("surveyor-test-admin-manage.db"):
         db.ensure_schema()
@@ -439,6 +465,7 @@ def main():
         check_templates()
         code = check_products()
         check_claims(code)
+        check_yearly(code)
     print(f"\nПройдено проверок: {len(PASSED)}")
 
 
