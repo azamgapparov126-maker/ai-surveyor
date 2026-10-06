@@ -351,10 +351,10 @@ def check_ui_blocks(html):
     miss = [k for k in cols if k not in html]
     assert not miss, "в карточке человека нет почты или способа входа: " + ", ".join(miss)
     hub = (Path(__file__).resolve().parent.parent / "app" / "admin_hub.html").read_text(encoding="utf-8")
-    cols = ['data-i18n="tg.user_email">Почта<', 'data-i18n="tg.user_login_method">Вход<',
-            "login_method(u.login_method)", '"Telegram и Google"', '"Служебный"']
+    # 06.10.2026 (записка заказчика): в админке только «Сотрудники» по записке — колонок «Почта» и «Вход» там нет
+    cols = ["Ф.И.О.", "Должность", "Департамент", "Отдел", "Филиал", "Логин", "Телефон", "/tg/users/manual"]
     miss = [k for k in cols if k not in hub]
-    assert not miss, "в админке, раздел «Пользователи», нет колонок почты и входа: " + ", ".join(miss)
+    assert not miss, "в админке, раздел «Сотрудники», нет колонок записки: " + ", ".join(miss)
     assert "№ 159" not in hub, "в админке осталось пояснение про закрытый вопрос № 159"
 
     # 22.09.2026 (заказчик): калькулятор упрощён — вероятность подтверждения, сохранение запроса

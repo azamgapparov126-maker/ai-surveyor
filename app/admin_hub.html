@@ -6,11 +6,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 <!--
   Админка как отдельный сайт (записка заказчика, 06.10.2026): адрес /admin (и прежний /admin/hub), вход по логину
-  и паролю — без сессии guard отправляет на /login?next=/admin, после входа страница возвращается сюда.
-  Меню из пяти пунктов: Сотрудники, Продукты, Страховые случаи, Дополнительно (всё прежнее содержимое
-  админки — разделы V.<группа>_<раздел> без изменений), Выход. Светлая дизайн-система INSON:
-  docs/design/design_system.html, токены docs/design/ds_build/tokens.css (синий INSON, белые карточки, Inter,
-  поля 16, кнопки 48). Тёмной темы здесь нет намеренно: заказчик просил «простой светлый сайт».
+  и паролю — без сессии guard отправляет на /login?next=/admin. Меню строго по записке: Сотрудники, Продукты,
+  Страховые случаи, Выход. Прежние разделы («Дополнительно») убраны по решению заказчика; отдельные страницы
+  (/stats, /calibration, /admin/deploy, /approvals, /law-feed и др.) открываются по своим адресам.
+  Светлая дизайн-система INSON: docs/design/ds_build/tokens.css. Тёмной темы здесь нет намеренно.
 -->
 <style>
 /* ===== ui-kit кнопок INSON v1 — один и тот же блок в app/tg.html, app/admin_hub.html, app/login.html =====
@@ -58,15 +57,13 @@ html[data-theme="light"]{--btn-line:#7A8894;--btn-hover:rgba(16,28,38,.06);--foc
   --font-mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
   --radius-sm:12px;--radius-md:20px;--touch:48px;
   --focus-ring:0 0 0 4px rgba(29,44,143,.22);
-  /* имена, которыми пользуются прежние разделы (V.*): те же значения дизайн-системы */
   --paper:var(--bg);--card:var(--surface);--ink:var(--fg);--muted:#5b6b80;--line:var(--border);--soft:#f1f4f9;
-  --accent:var(--accent-in);--accent-dim:#16237a;--warn:var(--warn-fg);--stop:var(--danger-fg);--ok:var(--success-fg);
-  --sans:var(--font-sans);--mono:var(--font-mono);
+  --accent:var(--accent-in);--sans:var(--font-sans);--mono:var(--font-mono);
   --btn-line:#c3cedd;--btn-hover:rgba(29,44,143,.06);--focus:#1D2C8F;--link:#1D2C8F;
   --side:248px;color-scheme:light}
 /* кнопки по дизайн-системе: основная — синий INSON, высота 48 (блок ui-kit выше общий для трёх страниц и не меняется) */
 .btn{min-height:var(--touch);border-radius:var(--radius-sm);font:600 15px/1.25 var(--font-sans);padding:12px 20px}
-.btn-sm{min-height:44px;padding:8px 14px;font-size:14px}
+.btn-sm{min-height:36px;padding:6px 12px;font-size:13px}
 .btn-primary,.btn-primary:visited{background:var(--accent-in);border-color:var(--accent-in);color:#fff;-webkit-text-fill-color:#fff}
 .btn-primary:hover:not(:disabled){background:#16237a;border-color:#16237a}
 .btn-primary:active:not(:disabled){background:#111b5f}
@@ -91,102 +88,71 @@ a{color:var(--accent-in)}
 .nv svg{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .nv:hover{background:var(--soft)}
 .nv.on{background:var(--accent-soft);color:var(--accent-in);font-weight:600}
-.nv:focus-visible,.sub a:focus-visible{outline:none;box-shadow:var(--focus-ring)}
-.nv .chev{margin-left:auto;width:18px;height:18px;transition:transform .15s}
-.nv[aria-expanded="true"] .chev{transform:rotate(180deg)}
-.sub{padding:2px 0 8px 10px;border-left:1px solid var(--border);margin:0 0 4px 22px}
-.sub h4{font:600 11px/16px var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:10px 0 2px 10px}
-.sub a{display:block;padding:7px 10px;border-radius:10px;color:var(--fg-2);font:400 14px/20px var(--font-sans);text-decoration:none}
-.sub a:hover{background:var(--soft)}.sub a.on{color:var(--accent-in);background:var(--accent-soft);font-weight:600}
+.nv:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border-soft)}
 .who{font:400 13px/18px var(--font-sans);color:var(--muted);padding:4px 12px 8px;overflow-wrap:anywhere}
 
 /* --- содержимое --- */
 main{padding:32px 32px 64px;min-width:0;max-width:1240px}
-.head{margin-bottom:20px}
-h1{font:700 26px/32px var(--font-sans);letter-spacing:-.01em;margin:0}
-.head .why{font-size:15px;color:var(--muted);max-width:70ch;margin:6px 0 0}
+h1{font:700 26px/32px var(--font-sans);letter-spacing:-.01em;margin:0 0 20px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px 24px;margin-bottom:16px;min-width:0}
-.card h3{font:600 18px/24px var(--font-sans);margin:0 0 4px}
-.card .note{font-size:14px;color:var(--muted);margin:0 0 14px}
-.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.card h3{font:600 18px/24px var(--font-sans);margin:0 0 14px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
 .tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px}
 .tile b{display:block;font:600 22px/30px var(--font-mono)}.tile span{font-size:13px;color:var(--muted)}
+.tile.bad b{color:var(--danger-fg)}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.scroll.tall{max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+.scroll.tall thead th{position:sticky;top:0;z-index:1}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border-soft);vertical-align:top}
 th{font:600 12px/16px var(--font-sans);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);white-space:nowrap;background:var(--soft)}
 td.n,th.n{font-family:var(--font-mono);text-align:right;white-space:nowrap}
-tr.pick{cursor:pointer}tr.pick:hover td{background:var(--soft)}
+td.nw{white-space:nowrap}
 .v{display:inline-block;font:600 12px/18px var(--font-sans);border-radius:999px;padding:1px 9px;white-space:nowrap}
 .v.ok{background:var(--success-soft);color:var(--success-fg)}
 .v.warn{background:var(--warn-soft);color:var(--warn-fg)}
 .v.stop{background:var(--danger-soft);color:var(--danger-fg)}
 .v.dim{background:var(--soft);color:var(--muted)}
-form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px 16px;align-items:end}
+tr.row-bad td{background:var(--danger-soft)}tr.row-warn td{background:var(--warn-soft)}
+td.notes{min-width:220px}td.notes span{display:block}td.notes .err{color:var(--danger-fg)}td.notes .wrn{color:var(--warn-fg)}td.notes .chg{color:var(--muted)}
+tr.edit td{background:var(--surface-warm)}
+td.ctl{white-space:nowrap;width:1%}td.ctl .btn+.btn{margin-left:6px}
 label{display:flex;flex-direction:column;gap:6px;font:500 14px/20px var(--font-sans);color:var(--fg-2)}
 label small{font-weight:400;color:var(--muted)}
-input,select,textarea{font:400 16px/22px var(--font-sans);color:var(--fg);background:var(--surface);border:1px solid var(--btn-line);
+input,select{font:400 16px/22px var(--font-sans);color:var(--fg);background:var(--surface);border:1px solid var(--btn-line);
   border-radius:var(--radius-sm);padding:12px 14px;width:100%;min-width:0;min-height:var(--touch)}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent-in);box-shadow:var(--focus-ring)}
+input:focus,select:focus{outline:none;border-color:var(--accent-in);box-shadow:var(--focus-ring)}
 input[readonly]{background:var(--soft);color:var(--fg-2)}
-input[type="checkbox"]{min-height:0;width:auto}
-td input,td select{min-height:44px;padding:9px 12px}
+td input{min-height:44px;padding:9px 12px}
 .msg{font-size:14px;color:var(--muted);margin-top:10px;min-height:1em}
 .msg.bad{color:var(--danger-fg)}.msg.good{color:var(--success-fg)}
 .msg ul{margin:6px 0 0;padding-left:20px}
-.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
-.kv{display:grid;grid-template-columns:minmax(140px,auto) 1fr;gap:6px 16px;font-size:14px}
-.kv span{color:var(--muted)}
-.frame{width:100%;height:calc(100vh - 200px);min-height:480px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .hint{font-size:14px;color:var(--muted);margin:0 0 8px}
 .flag{border-left:3px solid var(--warn-fg);background:var(--warn-soft);padding:8px 12px;border-radius:0 10px 10px 0;color:var(--warn-fg);font-size:14px;margin:0 0 12px}
 .flag.bad{border-color:var(--danger-fg);background:var(--danger-soft);color:var(--danger-fg)}
-.scroll.tall{max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
-.scroll.tall thead th{position:sticky;top:0;z-index:1}
-tr.row-bad td{background:var(--danger-soft)}tr.row-warn td{background:var(--warn-soft)}
-td.notes{min-width:220px}td.notes span{display:block}td.notes .err{color:var(--danger-fg)}td.notes .wrn{color:var(--warn-fg)}td.notes .chg{color:var(--muted)}
-tr.tot td{font-weight:700;border-top:2px solid var(--border)}
-tr.edit td{background:var(--surface-warm)}
-td.ctl{min-width:250px}td.ctl .btn{margin:0 4px 4px 0}
-#sTable td.ctl{min-width:300px;white-space:nowrap}
-.form{max-width:980px}
-td.nw{white-space:nowrap}
-.tile.bad b{color:var(--danger-fg)}
 .secret{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:14px 0 0;padding:14px 16px;border:1px dashed var(--warn-fg);border-radius:var(--radius-sm);background:var(--warn-soft)}
 .secret code{font:600 24px var(--font-mono);letter-spacing:.08em;user-select:all;word-break:break-all;color:var(--fg)}
-.secret .flag{background:none;padding:0 0 0 10px}
-.seg{display:inline-flex;flex-wrap:wrap}
-.seg .btn{border-radius:0;margin-left:-1px}.seg .btn:first-child{border-radius:10px 0 0 10px;margin-left:0}.seg .btn:last-child{border-radius:0 10px 10px 0}
-.seg .btn[aria-pressed="true"]{border-color:var(--accent-in);color:var(--accent-in);-webkit-text-fill-color:var(--accent-in);background:var(--accent-soft);position:relative}
-
-/* --- новые разделы: сотрудники, продукты, страховые случаи --- */
-fieldset{border:0;margin:0 0 4px;padding:0;min-width:0}
-legend{font:600 13px/18px var(--font-sans);color:var(--muted);padding:0;margin-bottom:8px;letter-spacing:.02em}
-.form{display:grid;gap:16px}
-.row1{display:grid;grid-template-columns:minmax(0,1fr);gap:12px 16px}
-.row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
-.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 16px}
+.form{display:grid;gap:12px 16px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 16px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
 .form .go{justify-self:start;min-width:180px}
-.split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:16px;align-items:start}
-.tbl-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end;justify-content:space-between;margin-bottom:12px}
+.split{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:16px;align-items:start}
+.tbl-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:12px}
 .tbl-head h3{margin:0}
-.tbl-head label{width:min(360px,100%)}
-.count{font:500 14px var(--font-sans);color:var(--muted)}
-.years{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:end}
-.years label{width:160px}
-.ytag{display:inline-block;font:600 12px/18px var(--font-sans);color:var(--accent-in);background:var(--accent-soft);border-radius:999px;padding:2px 10px;margin-right:8px;vertical-align:2px}
+.yearpick{display:flex;flex-direction:row;align-items:center;gap:10px;font:600 18px/24px var(--font-sans);color:var(--fg)}
+.yearpick select{width:120px;min-height:44px;padding:8px 12px;font-weight:600}
+.ytag{display:inline-block;font:600 12px/18px var(--font-sans);color:var(--accent-in);background:var(--accent-soft);border-radius:999px;padding:2px 10px}
 td.pname{color:var(--fg-2);min-width:180px;padding-top:20px}
 td.del{width:56px}
 .iconbtn{min-height:44px;min-width:44px;border-radius:10px;border:1px solid transparent;background:none;color:var(--muted);cursor:pointer;display:inline-grid;place-items:center}
 .iconbtn:hover{background:var(--danger-soft);color:var(--danger-fg)}
 .iconbtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
 .iconbtn:focus-visible{outline:none;box-shadow:var(--focus-ring)}
-details.files-sub{margin-top:14px}
-details.files-sub summary{cursor:pointer;font-size:14px;color:var(--fg-2);min-height:32px}
 .actions.left{flex-direction:row;justify-content:flex-start}
-#pWork:empty{display:none}
+#pWork:empty,#cWork:empty{display:none}
 
 @media (max-width:860px){
   .app{grid-template-columns:minmax(0,1fr)}
@@ -194,29 +160,27 @@ details.files-sub summary{cursor:pointer;font-size:14px;color:var(--fg-2);min-he
   .brand{flex-direction:row;align-items:center;gap:10px;padding:0;min-height:48px}
   .brand small{margin:0}
   .menu-btn{display:inline-flex;position:absolute;right:16px;top:10px}
-  #nav{display:none;padding:8px 0 4px;max-height:calc(100vh - 70px);overflow-y:auto}
+  #nav{display:none;padding:8px 0 4px}
   body.nav-open #nav{display:flex}
   main{padding:20px 16px 48px}
   h1{font-size:22px;line-height:28px}
   .card{padding:16px}
-  .row2,.row3,.split{grid-template-columns:minmax(0,1fr)}
-  .frame{height:calc(100vh - 220px)}
+  .grid4,.grid3,.grid2,.split{grid-template-columns:minmax(0,1fr)}
 }
 </style>
 
 <div class="app">
   <aside class="side">
-    <div class="brand"><span class="logo"><b>INS</b><b>ON</b></span><small>Админка сюрвейера</small></div>
+    <div class="brand"><span class="logo"><b>INS</b><b>ON</b></span><small>Админка</small></div>
     <button class="btn btn-secondary btn-sm menu-btn" id="menuBtn" type="button" aria-controls="nav" aria-expanded="false">Меню</button>
     <nav id="nav" aria-label="Разделы админки"></nav>
   </aside>
   <main id="main">
-    <div class="head"><h1 id="title">Админка</h1><p class="why" id="why"></p></div>
+    <h1 id="title">Админка</h1>
     <div id="view"></div>
   </main>
 </div>
 
-<script src="/i18n.js"></script>
 <script>
 "use strict";
 var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
@@ -224,72 +188,8 @@ var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, fu
 var $ = function (s) { return document.querySelector(s); };
 var num = function (n) { return n == null || n === "" ? "—" : Math.round(Number(n)).toLocaleString("ru-RU"); };
 var pct = function (n) { return n == null ? "—" : Number(n).toFixed(3).replace(".", ",") + "%"; };
-var when = function (s) { return esc(String(s || "").replace("T", " ").slice(0, 16)); };
 
-/* «Дополнительно»: прежние разделы админки без изменений. kind:"frame" — готовая страница во встроенном окне (тот же домен, сессия — cookie sid). */
-var NAV = [
- {id:"people", icon:"◉", short:"Люди", title:"Люди",
-  why:"Кто работает в системе, кто ждёт подтверждения и кто когда входил.",
-  items:[
-   {id:"users",   title:"Пользователи", why:"Список работников и заведение новых: ФИО, департамент, отдел, должность, телефон, почта, способ входа, роль; правка карточки и сброс пароля."},
-   {id:"pending", title:"Заявки на вход", why:"Заявки, поданные логином и паролем. Подтверждение открывает доступ."},
-   {id:"logins",  title:"Журнал входов", why:"Строки журнала действий, где действие начинается со слова «вход»."}]},
- {id:"requests", icon:"❑", short:"Запросы", title:"Запросы и согласования",
-  why:"Расчёты филиалов, их карточки и работа согласующих.",
-  items:[
-   {id:"list",      title:"Запросы и сводка", why:"Сводка по всем запросам и последние тридцать строк."},
-   {id:"card",      title:"Карточка запроса", why:"Расчёт, проверки, документы, распознанные поля, согласующие, выгрузки."},
-   {id:"approvals", title:"Согласования", kind:"frame", src:"/approvals",
-    why:"Готовая страница согласований: «ждут меня», лента решений, генеральные соглашения."}]},
- {id:"tariffs", icon:"₌", short:"Тарифы", title:"Тарифы и справочники",
-  why:"Всё, из чего складывается ставка: версии, минимумы, коэффициенты, справочники, нормы износа.",
-  items:[
-   {id:"forms",     title:"Версии, ставки, продукты", why:"Формы админки: версия тарифов, минимальная ставка, коэффициент, продукт; много продуктов сразу — из Excel."},
-   {id:"minrates",  title:"Минимальные ставки страховщика", why:"Минимальная ставка и тип ставки по каждому продукту: правка в строке новой версией с датой начала, история версий, импорт из Excel с предпросмотром."},
-   {id:"reference", title:"Справочники", why:"Продукты, классы, опасности, коэффициенты, чек-листы, правила, минимальные ставки."},
-   {id:"valuation", title:"Оценка: износ и настройки", why:"Процент износа за год, остаточный минимум и настройки оценки."},
-   {id:"templates", title:"Шаблоны классов", why:"Шаблон анализа по каждому из 17 классов: поля, риски, ракурсы, документы. Правка — новой версией, старые версии хранятся."},
-   {id:"osgor",     title:"ОСГОР: виды деятельности", why:"Справочник видов деятельности и коэффициентов по ним."},
-   {id:"vehicle",   title:"Транспорт и спецтехника", why:"Справочник групп техники и документов, по которым её опознают."},
-   {id:"review",    title:"Правила к пересмотру", why:"Проверки, помеченные роботом-юристом после изменения нормы."},
-   {id:"calibration", title:"Калибровка и убытки",
-    why:"Страховые случаи из Excel и сводка убыточности по продуктам; вторая вкладка — калибровка коэффициентов по убыткам."}]},
- {id:"market", icon:"↗", short:"Рынок", title:"Рынок и данные",
-  why:"Внешние данные рынка и собственные показатели компании.",
-  items:[
-   {id:"stats",     title:"Динамика рынка", kind:"frame", src:"/stats", why:"Дашборд по отчётам НАПП: премии, выплаты, убыточность, классы, страховщики, регионы. Вкладка «Конструктор» — ряды на выбор."},
-   {id:"capacity",  title:"Ёмкость и удержание", kind:"frame", src:"/capacity-page", why:"Готовая страница ёмкости, резервов, активов и маржи."},
-   {id:"portfolio", title:"Портфель", kind:"frame", src:"/portfolio", why:"Шаблон отчётности портфеля в Excel, загрузка с проверкой по строкам, сводка по классам и регионам, аудит ставок."},
-   {id:"statagency",title:"Агентство статистики", why:"Состояние наборов stat.uz, их реестр и последние строки рядов."},
-   {id:"finance",   title:"Финансы компании", why:"Собственные средства и страховые резервы — от них считается лимит на один риск."}]},
- {id:"knowledge", icon:"§", short:"Знания", title:"Знания и законы",
-  why:"Что изменилось в праве и что команда уже изучила.",
-  items:[
-   {id:"lawfeed", title:"Законодательство", kind:"frame", src:"/law-feed", why:"Готовая лента событий по актам."},
-   {id:"graph",   title:"Паутина знаний", kind:"frame", src:"/graph", why:"Продукты, классы и учётные группы одной картой."},
-   {id:"acts",    title:"Отслеживаемые акты", why:"Какие акты робот проверяет на lex.uz и когда сверял."},
-   {id:"topics",  title:"Реестр знаний", why:"Темы, которые команда изучает, и журнал занятий."},
-   {id:"library", title:"Библиотека", why:"Полки с документами компании и нормативными текстами."}]},
- {id:"team", icon:"✎", short:"Команда", title:"Команда",
-  why:"Задачи агентам, ежедневный доклад и рабочий стол.",
-  items:[
-   {id:"tasks",   title:"Задачи", kind:"frame", src:"/tasks-page", why:"Готовая доска задач команде."},
-   {id:"reports", title:"Ежедневный доклад", kind:"frame", src:"/reports-page", why:"Готовая страница докладов."},
-   {id:"office",  title:"Офис агентов", kind:"frame", src:"/office", why:"Готовая страница офиса."}]},
- {id:"system", icon:"⚙", short:"Система", title:"Система",
-  why:"Запуск, обслуживание и связь с внешними службами.",
-  items:[
-   {id:"deploy", title:"Запуск и обслуживание", kind:"frame", src:"/admin/deploy",
-    why:"Готовая страница: настройки, режим данных, резервные копии, чек-лист запуска."},
-   {id:"data",   title:"Источники данных", why:"Когда обновлялись НАПП, stat.uz, биржа, законы, знания о рынке и документы конкурентов."},
-   {id:"ai",     title:"Искусственный интеллект", why:"Состояние модели, проверка связи и журнал обращений."},
-   {id:"bot",    title:"Бот Telegram", why:"Состояние бота и способ получения обновлений."},
-   {id:"google", title:"Вход через Google", why:"Настроен вход или нет и с каких доменов пускаем."},
-   {id:"langs",  title:"Языки", why:"Какие языки интерфейса есть и какой показываем по умолчанию."},
-   {id:"audit",  title:"Журнал действий", why:"Последние записи журнала: кто, что и с чем сделал."}]}
-];
-
-/* ------------------------------------------------------------------ обмен */
+/* ------------------------------------------------------------------ обмен с сервером */
 async function api(path, options) {
   var r = await fetch(path, Object.assign({headers: {Accept: "application/json"}}, options || {}));
   var body = null;
@@ -299,7 +199,7 @@ async function api(path, options) {
     if (typeof dd === "string") d = dd;
     else if (dd && dd.message) d = dd.message + (Array.isArray(dd.errors) && dd.errors.length ? ": " + dd.errors.join("; ") : "");
     else if (dd) d = JSON.stringify(dd);
-    if (!d && body && body.errors && typeof body.errors === "object") {   /* 422 с ошибками по полям */
+    if (!d && body && body.errors && typeof body.errors === "object") {
       d = Object.keys(body.errors).map(function (k) { return k + ": " + body.errors[k]; }).join("; ");
     }
     if (r.status === 401) d = d || "Нужно войти в систему";
@@ -312,777 +212,34 @@ async function send(path, method, data) {
   return api(path, {method: method, headers: {"Content-Type": "application/json", Accept: "application/json"},
                     body: JSON.stringify(data || {})});
 }
+async function upload_xlsx(path, file) {
+  var fd = new FormData(); fd.append("file", file);
+  return api(path, {method: "POST", body: fd});
+}
 function fail(e) {
-  return '<div class="card"><h3>Раздел не загрузился</h3><p class="note">Причина: ' + esc(e.message || e) +
-         '.</p><p class="note">Что сделать: обновите страницу; если сказано про вход — войдите заново ' +
-         'на <a href="/login">странице входа</a>; если раздел открыт только администратору — попросите админа.</p></div>';
+  return '<div class="card"><h3>Раздел не загрузился</h3><p class="hint">' + esc(e.message || e) +
+         '. Обновите страницу; если просят войти — войдите заново на <a href="/login?next=/admin">странице входа</a>.</p></div>';
 }
 function tbl(head, rows, empty, cls) {
   return '<div class="scroll' + (cls ? " " + cls : "") + '"><table><thead><tr>' + head.map(function (h) { return "<th>" + h + "</th>"; }).join("") +
     "</tr></thead><tbody>" + (rows.length ? rows.join("") :
     '<tr><td colspan="' + head.length + '">' + (empty || "Записей пока нет") + "</td></tr>") + "</tbody></table></div>";
 }
-function frame(src, title) {
-  var sep = src.indexOf("?") >= 0 ? "&" : "?";
-  return '<p class="hint">Раздел открыт как есть — той же страницей, что и отдельным адресом ' +
-         '<a href="' + esc(src) + '" target="_blank" rel="noopener">' + esc(src) + '</a>.</p>' +
-         '<iframe class="frame" src="' + esc(src + sep + "embed=1") + '" title="' + esc(title) + '" loading="lazy"></iframe>';
+function money(n) { return n == null || n === "" ? "—" : num(n) + " сум"; }
+function ddmm(s) { var p = String(s || "").slice(0, 10).split("-"); return esc(p.length === 3 ? p[2] + "." + p[1] + "." + p[0] : (s || "—")); }
+function today_iso() { return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+function parse_num(s) {                      /* «1 250 000,50» → 1250000.5; пусто → null; не число → NaN */
+  s = String(s == null ? "" : s).replace(/[\s  ]/g, "").replace(",", ".");
+  return s === "" ? null : (/^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN);
 }
+function fmt_input(input) {                  /* разделители тысяч прямо в поле */
+  var v = input.value.replace(/[^\d,.]/g, "").replace(".", ","), p = v.split(",");
+  var int = p[0].replace(/^0+(?=\d)/, "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  input.value = p.length > 1 ? int + "," + p.slice(1).join("").slice(0, 2) : int;
+}
+function fmt_money(n) { return n == null ? "" : Number(n).toLocaleString("ru-RU", {maximumFractionDigits: 2}); }
 
-/* ------------------------------------------------------------------ разделы */
-var V = {};
-
-/* Способ входа из ответа /tg/users. Старый сервер поля не отдаёт — прочерк. */
-var LOGIN_METHOD = {telegram: ["telegram", "Telegram"], google: ["google", "Google"],
-  both: ["both", "Telegram и Google"], service: ["service", "Служебный"]};
-function login_method(m) {
-  var x = LOGIN_METHOD[m];
-  if (!x) return "—";
-  return window.T ? window.T("tg.login_method." + x[0], x[1]) : x[1];
-}
-
-/* --- Люди --- */
-/* Заведение сотрудника вручную, правка карточки и сброс пароля (app/staff.py, 02.10.2026).
-   Временный пароль сервер отдаёт один раз — показываем крупно и нигде не храним. */
-var STAFF_FIELDS = [["full_name", "ФИО", true, "Иванов Иван Иванович"], ["position", "Должность", true, "андеррайтер"],
-  ["department", "Департамент", true, "андеррайтинг"], ["unit", "Отдел", false, "имущество"],
-  ["branch", "Филиал", false, "Ташкент"], ["phone", "Телефон", true, "+998 90 123 45 67"]];
-var STAFF_NAMES = {};
-STAFF_FIELDS.forEach(function (f) { STAFF_NAMES[f[0]] = f[1].toLowerCase(); });
-function staff_inputs(u) {
-  return STAFF_FIELDS.map(function (f) {
-    var v = u ? (u[f[0]] || "") : (f[0] === "phone" ? "+998 " : "");
-    return "<label>" + f[1] + (f[2] ? "" : " (необязательно)") + '<input name="' + f[0] + '" value="' + esc(v) + '"' +
-      (f[2] ? " required" : "") + (f[0] === "phone" ? ' type="tel" inputmode="tel"' : "") +
-      ' placeholder="' + esc(f[3]) + '" autocomplete="off"></label>';
-  }).join("");
-}
-function staff_secret(login, pw, what) {
-  return '<div class="secret" role="status"><div><div class="hint" style="margin:0">' + esc(what) + " · логин <b>" + esc(login) +
-    "</b></div><code>" + esc(pw) + "</code></div>" +
-    '<button class="btn btn-secondary btn-sm" type="button" data-copy="' + esc(pw) + '">Скопировать пароль</button>' +
-    '<p class="flag" style="flex-basis:100%;margin:0">Пароль показывается один раз. Передайте его сотруднику лично, ' +
-    "не пересылайте в общих чатах. При первом входе сотрудник задаст свой пароль.</p></div>";
-}
-function copy_text(t, btn) {
-  var done = function () { btn.textContent = "Скопировано"; };
-  var by_hand = function () {
-    var a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select();
-    try { document.execCommand("copy"); done(); } catch (e) { btn.textContent = "Выделите пароль и скопируйте вручную"; }
-    a.remove();
-  };
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, by_hand);
-  else by_hand();
-}
-V.people_users = async function (el) {
-  var d = await api("/tg/users"), byId = {}, fresh = false;
-  el.innerHTML = (d.can_manage ? '<div class="card"><h3>Добавить сотрудника</h3>' +
-    '<p class="note">Сотрудник сразу получает доступ с ролью «сотрудник». Временный пароль можно не задавать — система ' +
-    "придумает его сама и покажет один раз. При первом входе сотрудник сменит пароль на свой.</p>" +
-    '<form class="f" id="uAdd" autocomplete="off">' + staff_inputs(null) +
-    '<label>Логин<input name="login" required placeholder="i.ivanov" autocapitalize="off" spellcheck="false" autocomplete="off"></label>' +
-    '<label>Временный пароль (необязательно)<input name="temp_password" placeholder="придумает система" autocomplete="new-password"></label>' +
-    '<button class="btn btn-primary">Добавить сотрудника</button></form><div class="msg" id="uAddMsg"></div><div id="uAddOut"></div></div>' : "") +
-    '<div id="uListBox"></div>';
-  var paint = function (u) {
-    var way = login_method(u.login_method);
-    var mail = u.email || "—";
-    var role = '<span class="v ' + (u.is_admin ? "ok" : "dim") + '">' + esc(u.role) + "</span>";
-    var st = u.status === "активен" ? "ok" : u.status === "заблокирован" ? "stop" : "warn";
-    var ctl = d.can_manage
-      ? '<button class="btn btn-secondary btn-sm" data-act="edit" data-id="' + u.id + '">Изменить</button> ' +
-        '<button class="btn btn-secondary btn-sm" data-act="reset" data-id="' + u.id + '">Сбросить пароль</button> ' +
-        (u.is_admin ? '<button class="btn btn-secondary btn-sm" data-act="revoke" data-id="' + u.id + '">Снять права админа</button>'
-                    : '<button class="btn btn-secondary btn-sm" data-act="make" data-id="' + u.id + '">Сделать админом</button>') +
-        ' <button class="btn btn-danger btn-sm" data-act="block" data-id="' + u.id + '">Заблокировать</button>'
-      : "—";
-    return "<tr><td>" + esc(u.full_name || u.login) + "</td><td>" + esc(u.department) +
-      (u.unit ? '<br><span class="hint">' + esc(u.unit) + "</span>" : "") + "</td><td>" + esc(u.position) +
-      "</td><td>" + esc(u.phone || "—") + "</td><td>" + esc(mail) + "</td><td>" + esc(u.login) + "</td><td>" + esc(way) +
-      "</td><td>" + role + '</td><td><span class="v ' + st + '">' + esc(u.status) + "</span>" +
-      (u.must_change_password ? ' <span class="v warn" title="Сотрудник ещё не сменил временный пароль">временный пароль</span>' : "") +
-      '</td><td class="ctl">' + ctl + "</td></tr>";
-  };
-  /* список рисуем отдельно от формы добавления: показанный пароль и набранный текст не пропадают */
-  var load_list = async function (note) {
-    var box = $("#uListBox");
-    try { if (fresh) d = await api("/tg/users"); } catch (e) { box.innerHTML = fail(e); return; }
-    fresh = true;
-    byId = {}; d.items.forEach(function (u) { byId[u.id] = u; });
-    box.innerHTML = '<div class="card"><h3>Работники: ' + d.count + "</h3>" +
-      '<p class="note">Права меняет администратор. Последнего администратора снять нельзя — управлять системой станет некому. ' +
-      "Бейдж «временный пароль» — сотрудник ещё не вошёл и не задал свой пароль.</p>" +
-      '<div id="uOut">' + (note || "") + "</div>" +
-      tbl(["ФИО", "Департамент / отдел", "Должность", "Телефон", '<span data-i18n="tg.user_email">Почта</span>', "Логин",
-           '<span data-i18n="tg.user_login_method">Вход</span>', "Роль", "Статус", ""], d.items.map(paint), "Работников пока нет") +
-      '<div class="msg" id="uMsg"></div></div>';
-    if (window.i18nPaint) window.i18nPaint(box);
-  };
-  await load_list();
-
-  var add = $("#uAdd");
-  if (add) add.onsubmit = async function (e) {
-    e.preventDefault();
-    var m = $("#uAddMsg"), out = $("#uAddOut"), body = {};
-    new FormData(add).forEach(function (v, k) { body[k] = String(v).trim(); });
-    m.className = "msg"; m.textContent = "Заводим сотрудника…"; out.innerHTML = "";
-    try {
-      var r = await send("/tg/users/manual", "POST", body);
-      add.reset(); add.elements["phone"].value = "+998 ";
-      m.textContent = (r.message || "Сотрудник заведён") + "." +
-        (r.temp_password ? "" : " Пароль вы задали сами — передайте его сотруднику лично.");
-      if (r.temp_password) out.innerHTML = staff_secret(r.user.login, r.temp_password, "Временный пароль для " + (r.user.full_name || r.user.login));
-      load_list();
-    } catch (err) { m.className = "msg bad"; m.textContent = "Сотрудник не заведён: " + err.message; }
-  };
-
-  el.onclick = async function (e) {
-    var c = e.target.closest("button[data-copy]");
-    if (c) return copy_text(c.dataset.copy, c);
-    if (e.target.closest("button[data-edit-cancel]")) { var open = el.querySelector("tr.edit"); if (open) open.remove(); return; }
-    var b = e.target.closest("button[data-act]"); if (!b) return;
-    var id = b.dataset.id, act = b.dataset.act, m = $("#uMsg"), u = byId[id] || {}, r;
-    if (act === "edit") {
-      var was = el.querySelector("tr.edit"); if (was) was.remove();
-      var tr = document.createElement("tr"); tr.className = "edit";
-      tr.innerHTML = '<td colspan="10"><b>Карточка: ' + esc(u.full_name || u.login) + "</b>" +
-        '<form class="f" style="margin-top:8px" autocomplete="off">' + staff_inputs(u) +
-        '<button class="btn btn-primary">Сохранить изменения</button>' +
-        '<button class="btn btn-secondary" type="button" data-edit-cancel="1">Отменить</button></form><div class="msg"></div></td>';
-      b.closest("tr").after(tr);
-      tr.querySelector("input").focus();
-      tr.querySelector("form").onsubmit = async function (ev) {
-        ev.preventDefault();
-        var f = ev.target, em = tr.querySelector(".msg"), diff = {};
-        STAFF_FIELDS.forEach(function (x) {
-          var v = f.elements[x[0]].value.trim();
-          if (v !== String(u[x[0]] || "")) diff[x[0]] = v;
-        });
-        if (!Object.keys(diff).length) { em.className = "msg"; em.textContent = "Ничего не изменилось — сохранять нечего."; return; }
-        em.className = "msg"; em.textContent = "Сохраняем…";
-        try {
-          r = await send("/tg/users/" + id, "PUT", diff);
-          load_list('<p class="hint">Карточка «' + esc(r.user.full_name || r.user.login) + "» сохранена" +
-            (r.changed.length ? ": изменено — " + esc(r.changed.map(function (k) { return STAFF_NAMES[k] || k; }).join(", ")) : ", изменений нет") + ".</p>");
-        } catch (err) { em.className = "msg bad"; em.textContent = "Не сохранилось: " + err.message; }
-      };
-      return;
-    }
-    if (act === "reset") {
-      if (!confirm("Сбросить пароль сотруднику «" + (u.full_name || u.login) + "»?\n\nТекущий пароль и все открытые входы " +
-                   "перестанут действовать. Система выдаст временный пароль — его нужно передать сотруднику лично.")) return;
-      m.className = "msg"; m.textContent = "Сбрасываем пароль…";
-      try {
-        r = await send("/tg/users/" + id + "/reset-password", "POST", {});
-        load_list(staff_secret(r.login, r.temp_password, "Новый временный пароль для " + (u.full_name || r.login)));
-      } catch (err) { m.className = "msg bad"; m.textContent = "Пароль не сброшен: " + err.message; }
-      return;
-    }
-    var ask = act === "block" ? "Заблокировать работника? Он перестанет входить в систему."
-            : act === "make" ? "Выдать права администратора?" : "Снять права администратора?";
-    if (!confirm(ask)) return;
-    m.className = "msg"; m.textContent = "Отправляем…";
-    try {
-      await send(act === "block" ? "/auth/block/" + id : "/tg/users/" + id + (act === "make" ? "/make-admin" : "/revoke-admin"), "POST", {});
-      load_list();
-    } catch (err) { m.className = "msg bad"; m.textContent = "Не вышло: " + err.message; }
-  };
-};
-V.people_pending = async function (el) {
-  var items = await api("/auth/pending");
-  var rows = items.map(function (u) {
-    return "<tr><td>" + esc(u.full_name || u.login) + "</td><td>" + esc(u.login) + "</td><td>" + esc(u.role) +
-      "</td><td>" + esc(u.branch || "—") + "</td><td>" + esc(u.registry ? u.registry.name : "в реестре компании не найден") +
-      '</td><td><button class="btn btn-secondary btn-sm" data-ok="' + u.id + '">Подтвердить</button> ' +
-      '<button class="btn btn-danger btn-sm" data-no="' + u.id + '">Отклонить</button></td></tr>';
-  });
-  el.innerHTML = '<div class="card"><h3>Заявки на вход</h3>' +
-    '<p class="note">Заявка приходит от того, кто регистрируется логином и паролем. Подтверждение открывает доступ по его роли.</p>' +
-    tbl(["ФИО", "Логин", "Роль", "Филиал", "Реестр компании", ""], rows, "Новых заявок нет") +
-    '<div class="msg" id="pMsg"></div></div>';
-  el.onclick = async function (e) {
-    var ok = e.target.dataset ? e.target.dataset.ok : null, no = e.target.dataset ? e.target.dataset.no : null;
-    if (!ok && !no) return;
-    var m = $("#pMsg"); m.className = "msg"; m.textContent = "Отправляем…";
-    try {
-      if (ok) await send("/auth/approve/" + ok, "POST", {});
-      else {
-        var why = prompt("Одной строкой: почему отклоняем заявку?");
-        if (why === null) { m.textContent = ""; return; }
-        await send("/auth/reject/" + no + "?reason=" + encodeURIComponent(why), "POST", {});
-      }
-      open_section("people", "pending");
-    } catch (err) { m.className = "msg bad"; m.textContent = "Не вышло: " + err.message; }
-  };
-};
-V.people_logins = async function (el) {
-  var a = await api("/audit?limit=300");
-  var rows = a.filter(function (x) { return String(x.action || "").toLowerCase().indexOf("вход") === 0; })
-    .slice(0, 60).map(function (x) {
-      return "<tr><td>" + when(x.ts) + "</td><td>" + esc(x.who) + "</td><td>" + esc(x.action) + "</td><td>" +
-        esc(x.entity) + '</td><td style="font-family:var(--mono);font-size:11.5px">' + esc(String(x.detail || "").slice(0, 90)) + "</td></tr>";
-    });
-  el.innerHTML = '<div class="card"><h3>Входы в систему</h3>' +
-    '<p class="note">Отдельного журнала входов в системе нет: это строки общего журнала действий, у которых действие ' +
-    'начинается со слова «вход» — вход, вход через Telegram, вход через Google, вход по коду бота.</p>' +
-    tbl(["Когда", "Кто", "Действие", "Объект", "Детали"], rows, "Входов в журнале пока нет") + "</div>";
-};
-
-/* --- Запросы --- */
-V.requests_list = async function (el) {
-  var a = await api("/analytics/summary");
-  var bv = {}; (a.by_verdict || []).forEach(function (x) { bv[x.verdict] = x.n; });
-  var tiles = [["Запросов", a.requests], ["Без замечаний", bv["ок"] || 0], ["На утверждение", bv["на утверждение"] || 0],
-    ["Отклонено", bv["отклонено"] || 0], ["Ручных ставок", a.manual_rates], ["Ниже технической", a.below_technical]]
-    .map(function (p) { return '<div class="tile"><b>' + p[1] + "</b><span>" + p[0] + "</span></div>"; }).join("");
-  var r = await api("/requests?limit=30");
-  var vcl = function (v) { return v === "ок" ? "ok" : v === "на утверждение" ? "warn" : "stop"; };
-  var rows = r.map(function (x) {
-    return '<tr class="pick" data-rid="' + x.id + '"><td>' + x.id + "</td><td>" + esc(x.branch) + "</td><td>" +
-      esc(x.product_code) + "</td><td>" + esc(x.policyholder) + '</td><td class="n">' + pct(x.applied_rate_pct) +
-      '</td><td class="n">' + pct(x.gross_rate_pct) + '</td><td class="n">' + pct(x.min_rate_pct) + '</td><td class="n">' +
-      num(x.premium) + '</td><td><span class="v ' + vcl(x.verdict) + '">' + esc(x.verdict) + "</span></td><td>" +
-      esc(x.status) + "</td></tr>";
-  });
-  var grp = function (title, rs, cols) {
-    return '<div class="card"><h3>' + title + "</h3>" + tbl(cols.map(function (c) { return c[0]; }),
-      (rs || []).map(function (x) { return "<tr>" + cols.map(function (c) { return '<td class="' + (c[2] || "") + '">' + c[1](x) + "</td>"; }).join("") + "</tr>"; }),
-      "Пока пусто") + "</div>";
-  };
-  el.innerHTML = '<div class="tiles">' + tiles + "</div>" +
-    '<div class="card"><h3>Последние запросы</h3><p class="note">Нажмите строку — откроется карточка запроса.</p>' +
-    tbl(["№", "Филиал", "Продукт", "Страхователь", "Ставка", "Техн.", "Мин.", "Премия", "Вердикт", "Статус"], rows, "Запросов пока нет") + "</div>" +
-    '<div class="cols">' +
-    grp("По продуктам", a.by_product, [["Продукт", function (x) { return esc(x.product_code); }], ["Запросов", function (x) { return x.n; }, "n"],
-      ["Средняя ставка", function (x) { return pct(x.avg_rate); }, "n"], ["Премия", function (x) { return num(x.premium); }, "n"]]) +
-    grp("По филиалам", a.by_branch, [["Филиал", function (x) { return esc(x.branch); }], ["Запросов", function (x) { return x.n; }, "n"],
-      ["Ниже технической", function (x) { return x.below_tech; }, "n"]]) +
-    grp("Частые нарушения", a.top_violations, [["Правило", function (x) { return esc(x.rule_code); }], ["Раз", function (x) { return x.n; }, "n"]]) +
-    "</div>";
-  el.onclick = function (e) {
-    var tr = e.target.closest("tr[data-rid]"); if (!tr) return;
-    open_section("requests", "card", tr.dataset.rid);
-  };
-};
-V.requests_card = async function (el, rid) {
-  rid = rid || V._rid || "";
-  el.innerHTML = '<div class="card"><h3>Карточка запроса</h3>' +
-    '<p class="note">Введите номер запроса или откройте его из раздела «Запросы и сводка».</p>' +
-    '<form class="f" id="rf"><label>Номер запроса<input name="rid" type="number" value="' + esc(rid) + '" required></label>' +
-    '<button class="btn btn-primary">Открыть карточку</button></form><div class="msg" id="rMsg"></div></div><div id="rBody"></div>';
-  $("#rf").onsubmit = function (e) { e.preventDefault(); open_section("requests", "card", e.target.rid.value); };
-  if (!rid) return;
-  V._rid = rid;
-  var body = $("#rBody"), msg = $("#rMsg");
-  msg.textContent = "Загружаем карточку…";
-  var c, out = "";
-  try { c = await api("/requests/" + rid); }
-  catch (e) { msg.className = "msg bad"; msg.textContent = "Карточка не открылась: " + e.message; return; }
-  msg.textContent = "";
-  var q = c.request || {}, calc = c.calculation || {};
-  out += '<div class="cols"><div class="card"><h3>Запрос № ' + esc(q.id) + "</h3>" +
-    '<div class="kv"><span>Страхователь</span><div>' + esc(q.policyholder) + "</div>" +
-    "<span>Филиал</span><div>" + esc(q.branch) + "</div>" +
-    "<span>Продукт</span><div>" + esc(q.product_code) + "</div>" +
-    "<span>Создан</span><div>" + when(q.created_at) + "</div>" +
-    "<span>Статус</span><div>" + esc(q.status) + "</div></div></div>" +
-    '<div class="card"><h3>Расчёт</h3><div class="kv">' +
-    "<span>Применённая ставка</span><div>" + pct(calc.applied_rate_pct) + "</div>" +
-    "<span>Техническая</span><div>" + pct(calc.gross_rate_pct) + "</div>" +
-    "<span>Минимальная</span><div>" + pct(calc.min_rate_pct) + "</div>" +
-    "<span>Премия</span><div>" + num(calc.premium) + "</div>" +
-    "<span>Вердикт</span><div>" + esc(calc.verdict || "—") + "</div></div>" +
-    '<p class="note" style="margin-top:10px">Выгрузки: <a href="/requests/' + esc(rid) + '/analysis.pdf" target="_blank">разбор PDF</a> · ' +
-    '<a href="/requests/' + esc(rid) + '/analysis.xlsx" target="_blank">разбор XLSX</a> · ' +
-    '<a href="/requests/' + esc(rid) + '/proposal.pdf" target="_blank">предложение клиенту PDF</a></p></div></div>';
-  out += '<div class="card"><h3>Проверки</h3>' + tbl(["Правило", "Итог", "Что именно"],
-    (c.checks || []).map(function (x) {
-      return "<tr><td>" + esc(x.rule_code) + '</td><td><span class="v ' + (x.status === "ок" ? "ok" : "warn") + '">' +
-        esc(x.status) + "</span></td><td>" + esc(x.detail) + "</td></tr>"; }), "Проверок нет") + "</div>";
-  var part = async function (title, note, path, render) {
-    try { var d = await api(path); out += '<div class="card"><h3>' + title + '</h3><p class="note">' + note + "</p>" + render(d) + "</div>"; }
-    catch (e) { out += '<div class="card"><h3>' + title + '</h3><p class="note">Не загрузилось: ' + esc(e.message) + "</p></div>"; }
-  };
-  await part("Согласующие", "Кто рассматривает запрос и что решил.", "/requests/" + rid + "/approvals", function (d) {
-    return '<p class="note">Состояние: ' + esc(d.approval_status) + (d.general_agreement_id ? " · генеральное соглашение № " + esc(d.general_agreement_id) : "") + "</p>" +
-      tbl(["Очередь", "Кто", "Решение", "Когда", "Примечание"], (d.reviewers || []).map(function (x) {
-        return "<tr><td>" + esc(x.order_no) + "</td><td>" + esc(x.login || x.user_id) + "</td><td>" + esc(x.status) +
-          "</td><td>" + when(x.decided_at) + "</td><td>" + esc(x.comment || "") + "</td></tr>"; }), "Согласующие не назначены");
-  });
-  await part("Чек-лист документов", "Что нужно по правилам и что уже получено.", "/requests/" + rid + "/checklist", function (d) {
-    return tbl(["Пункт", "Область", "Обязателен", "Получен"], (d["пункты"] || []).map(function (x) {
-      return "<tr><td>" + esc(x["пункт"]) + "</td><td>" + esc(x["область"]) + " " + esc(x["код"]) + "</td><td>" +
-        (x["обязателен"] ? "да" : "нет") + '</td><td><span class="v ' + (x["получен"] ? "ok" : "warn") + '">' +
-        (x["получен"] ? "получен" : "нет") + "</span></td></tr>"; }), "Чек-лист пуст");
-  });
-  await part("Файлы запроса", "Загруженные документы объекта, без фотографий.", "/requests/" + rid + "/documents/files", function (d) {
-    return tbl(["Файл", "Вид", "Размер", "Разбор", "Когда"], (d || []).map(function (x) {
-      return "<tr><td>" + esc(x.filename) + "</td><td>" + esc(x.doc_kind) + '</td><td class="n">' + num(x.size_bytes) +
-        "</td><td>" + esc(x.parse_status || "—") + "</td><td>" + when(x.uploaded_at) + "</td></tr>"; }), "Файлов нет");
-  });
-  await part("Распознанные поля", "Что вычитано из документов и откуда взято.", "/requests/" + rid + "/extracted-fields", function (d) {
-    var f = d["поля"] || {};
-    return tbl(["Поле", "Значение", "Метод", "Уверенность", "Документ"], Object.keys(f).map(function (k) {
-      var x = f[k];
-      return "<tr><td>" + esc(x["название"] || k) + "</td><td>" + esc(x["значение"]) +
-        (x["требует_проверки"] ? ' <span class="v warn">проверить</span>' : "") + "</td><td>" + esc(x["метод"]) +
-        '</td><td class="n">' + esc(x["уверенность"]) + "</td><td>" + esc((x["документ"] || {})["имя_файла"] || "") + "</td></tr>";
-    }), "Полей пока нет");
-  });
-  body.innerHTML = out;
-};
-V.requests_approvals = function (el) { el.innerHTML = frame("/approvals", "Согласования"); };
-
-/* --- Тарифы и справочники --- */
-V.tariffs_forms = function (el) {
-  el.innerHTML = '<div class="cols">' +
-   '<div class="card"><h3>Версия тарифов</h3><p class="note">Своя версия компании или минимальные ставки регулятора. Старые расчёты остаются на своей версии.</p>' +
-   '<form class="f" data-url="/admin/tariff-versions" data-m="POST"><label>Уровень<select name="level"><option>компания</option><option>регулятор</option></select></label>' +
-   '<label>Название<input name="name" required placeholder="Тарифная политика 2027"></label><label>Документ<input name="document_ref" placeholder="приказ №, дата"></label>' +
-   '<label>Действует с<input name="effective_from" type="date" required></label><button class="btn btn-primary">Создать версию</button></form><div class="msg"></div></div>' +
-
-   '<div class="card"><h3>Минимальная ставка</h3><p class="note">Нижний порог по продукту. Тип клиента — если ставки разные для физических и юридических лиц.</p>' +
-   '<form class="f" data-url="/admin/min-rates" data-m="POST"><label>ID версии<input name="tariff_version_id" type="number" required></label>' +
-   '<label>Код продукта<input name="product_code" required placeholder="0807"></label>' +
-   '<label>Тип клиента<select name="payer_type"><option value="">все</option><option>юр</option><option>физ</option></select></label>' +
-   '<label>Ставка, %<input name="min_rate_pct" type="number" step="0.001" required></label><button class="btn btn-primary">Добавить ставку</button></form><div class="msg"></div></div>' +
-
-   '<div class="card"><h3>Коэффициент</h3><p class="note">Фактор → вариант → множитель. «Калиброван» значит посчитан по статистике компании.</p>' +
-   '<form class="f" data-url="/admin/coefficients" data-m="POST"><label>Код фактора<input name="factor_code" required placeholder="protection"></label>' +
-   '<label>Название фактора<input name="factor_name" required></label><label>Код варианта<input name="option_code" required></label>' +
-   '<label>Название варианта<input name="option_name" required></label><label>Множитель<input name="multiplier" type="number" step="0.01" required></label>' +
-   '<label>Калиброван<select name="calibrated"><option value="0">нет</option><option value="1">да</option></select></label>' +
-   '<label>Источник<input name="source"></label><button class="btn btn-primary">Сохранить коэффициент</button></form><div class="msg"></div></div>' +
-
-   '<div class="card"><h3>Новый продукт</h3><p class="note">Создаётся в тестовом статусе. Классы — через запятую, например 8,13.</p>' +
-   '<form class="f" data-url="/admin/products" data-m="POST"><label>Код<input name="code" required placeholder="0836"></label>' +
-   '<label>Название<input name="name" required></label><label>Классы<input name="classes" required placeholder="8"></label>' +
-   '<label>Текст тарифа<input name="rate_text" placeholder="0,05%"></label><label>Мин. ставка, %<input name="min_rate_pct" type="number" step="0.001"></label>' +
-   '<label>ID версии<input name="tariff_version_id" type="number"></label><button class="btn btn-primary">Создать продукт</button></form><div class="msg"></div></div>' +
-   "</div>" + prod_import_card();
-  bind_forms(el);
-  prod_import_bind();
-};
-V.tariffs_reference = async function (el) {
-  var names = [["products", "Продукты"], ["classes", "Классы"], ["perils", "Опасности"], ["coefficients", "Коэффициенты"],
-               ["checklists", "Чек-листы"], ["rules", "Правила"], ["min_rates", "Минимальные ставки"]];
-  el.innerHTML = '<div class="card"><h3>Справочники</h3><p class="note">Таблицы такими, как их читает движок расчёта.</p>' +
-    '<div class="bar">' + names.map(function (n, i) {
-      return '<button class="btn btn-secondary btn-sm" data-ref="' + n[0] + '"' + (i ? "" : ' style="border-color:var(--accent)"') + ">" + n[1] + "</button>";
-    }).join("") + '</div><div id="refBody">Загружаем…</div></div>';
-  var show = async function (name) {
-    var b = $("#refBody"); b.textContent = "Загружаем…";
-    try {
-      var rows = await api("/reference/" + name);
-      if (!rows.length) { b.innerHTML = '<p class="note">Справочник пуст.</p>'; return; }
-      var cols = Object.keys(rows[0]);
-      b.innerHTML = '<p class="note">Строк: ' + rows.length + (rows.length > 200 ? ", показываем первые 200" : "") + "</p>" +
-        tbl(cols.map(esc), rows.slice(0, 200).map(function (r) {
-          return "<tr>" + cols.map(function (c) { return "<td>" + esc(r[c]) + "</td>"; }).join("") + "</tr>"; }));
-    } catch (e) { b.innerHTML = fail(e); }
-  };
-  el.querySelector(".bar").onclick = function (e) {
-    var t = e.target.closest("button[data-ref]"); if (!t) return;
-    el.querySelectorAll("[data-ref]").forEach(function (x) { x.style.borderColor = ""; });
-    t.style.borderColor = "var(--accent)"; show(t.dataset.ref);
-  };
-  show("products");
-};
-V.tariffs_valuation = async function (el) {
-  var cal = function (c) { return Number(c) ? '<span class="v ok">калиброван</span>' : '<span class="v warn">экспертное</span>'; };
-  var norms = await api("/valuation/norms"), sets = await api("/valuation/settings");
-  el.innerHTML = '<div class="card"><h3>Нормы износа</h3>' +
-    '<p class="note">Процент износа за год и остаточный минимум — доля от новой цены, ниже которой стоимость не опускается. ' +
-    'Пометка «экспертное» значит: значение не посчитано по статистике компании.</p>' +
-    tbl(["Код", "Название", "Износ, %/год", "Остаток, %", "Статус", ""], norms.map(function (x) {
-      return "<tr><td>" + esc(x.code) + "</td><td>" + esc(x.name) + '</td><td class="n"><input data-code="' + esc(x.code) +
-        '" data-f="rate_pct" type="number" step="0.1" value="' + esc(x.rate_pct) + '" style="max-width:96px"></td>' +
-        '<td class="n"><input data-code="' + esc(x.code) + '" data-f="residual_min_pct" type="number" step="0.1" value="' +
-        esc(x.residual_min_pct == null ? "" : x.residual_min_pct) + '" style="max-width:96px"></td><td>' + cal(x.calibrated) +
-        '</td><td><button class="btn btn-secondary btn-sm" data-save="' + esc(x.code) + '">Сохранить</button></td></tr>';
-    }), "Норм пока нет") + '<div class="msg" id="nMsg"></div></div>' +
-    '<div class="card"><h3>Настройки оценки</h3><p class="note">Значения, которыми пользуется оценка стоимости объекта.</p>' +
-    tbl(["Ключ", "Название", "Значение", "Ед.", "Статус", ""], sets.map(function (x) {
-      return '<tr><td style="font-family:var(--mono);font-size:11.5px">' + esc(x.key) + "</td><td>" + esc(x.name) +
-        '</td><td class="n"><input data-key="' + esc(x.key) + '" value="' + esc(x.value) + '" style="max-width:120px"></td><td>' +
-        esc(x.unit) + "</td><td>" + cal(x.calibrated) + '</td><td><button class="btn btn-secondary btn-sm" data-skey="' + esc(x.key) +
-        '">Сохранить</button></td></tr>';
-    }), "Настроек пока нет") + '<div class="msg" id="sMsg"></div></div>';
-  el.onclick = async function (e) {
-    var code = e.target.dataset ? e.target.dataset.save : null, key = e.target.dataset ? e.target.dataset.skey : null;
-    if (!code && !key) return;
-    var m = $(code ? "#nMsg" : "#sMsg"); m.className = "msg"; m.textContent = "Сохраняем…";
-    try {
-      if (code) {
-        var row = norms.filter(function (x) { return x.code === code; })[0];
-        var get = function (f) { return el.querySelector('input[data-code="' + code + '"][data-f="' + f + '"]').value; };
-        await send("/valuation/norms", "POST", Object.assign({}, row, {rate_pct: Number(get("rate_pct")),
-          residual_min_pct: get("residual_min_pct") === "" ? null : Number(get("residual_min_pct"))}));
-      } else {
-        var s = sets.filter(function (x) { return x.key === key; })[0];
-        await send("/valuation/settings", "POST", Object.assign({}, s, {value: el.querySelector('input[data-key="' + key + '"]').value}));
-      }
-      m.textContent = "Сохранено. Обновляем…";
-      open_section("tariffs", "valuation");
-    } catch (err) { m.className = "msg bad"; m.textContent = "Не сохранилось: " + err.message; }
-  };
-};
-/* --- Минимальные ставки страховщика (01.10.2026, app/min_rates.py) ---
-   GET /reference/min-rates — продукты с действующей ставкой, типом и датой; PUT /reference/min-rates/{код} — новая
-   версия (администратор): min_rate_pct, rate_type (annual | fixed), effective_from (не раньше сегодня), note;
-   GET /reference/min-rates/{код}/history — все версии (из тарифной политики 54-П и правки); импорт из Excel:
-   GET /reference/min-rates/template.xlsx, POST /reference/min-rates/import?apply=0 — предпросмотр, apply=1 — запись. */
-var MR_TYPE = {annual: "годовая", fixed: "на весь срок"};
-var MR_SRC = {policy: "тарифная политика", admin: "правка администратора", "import": "импорт из Excel"};
-var MRS = {items: [], q: "", file: null};
-function mr_today() { return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
-function mr_rows() {
-  var q = MRS.q.toLowerCase();
-  return MRS.items.filter(function (x) {
-    return !q || String(x.code).toLowerCase().indexOf(q) >= 0 || String(x.name || "").toLowerCase().indexOf(q) >= 0;
-  }).map(function (x) {
-    var c = esc(x.code);
-    if (!x.editable) {
-      return "<tr><td>" + c + "</td><td>" + esc(x.name) + '</td><td colspan="4">' +
-        '<span class="v warn">обязательный вид: ставку устанавливает нормативный акт</span></td><td>' +
-        esc(x.rate_text || "") + '</td><td><button class="btn btn-secondary btn-sm" type="button" data-mhist="' + c +
-        '">История</button></td></tr>';
-    }
-    var next = x.next ? '<div class="note">с ' + esc(x.next.effective_from) + ": " + pct(x.next.min_rate_pct) + "</div>" : "";
-    return "<tr><td>" + c + "</td><td>" + esc(x.name) + '</td><td class="n"><input data-mcode="' + c +
-      '" data-f="min_rate_pct" type="number" step="0.0001" min="0" value="' + esc(x.min_rate_pct == null ? "" : x.min_rate_pct) +
-      '" style="max-width:96px"></td><td><select data-mcode="' + c + '" data-f="rate_type">' +
-      ["annual", "fixed"].map(function (t) {
-        return '<option value="' + t + '"' + (x.rate_type === t ? " selected" : "") + ">" + MR_TYPE[t] + "</option>";
-      }).join("") + '</select></td><td><input data-mcode="' + c + '" data-f="effective_from" type="date" min="' + mr_today() +
-      '" value="' + mr_today() + '"></td><td><input data-mcode="' + c + '" data-f="note" maxlength="300" placeholder="примечание"></td>' +
-      "<td>" + esc(x.source_label || "—") + (x.effective_from ? '<div class="note">действует с ' + esc(x.effective_from) + "</div>" : "") +
-      next + '</td><td><button class="btn btn-primary btn-sm" type="button" data-msave="' + c + '">Сохранить</button> ' +
-      '<button class="btn btn-secondary btn-sm" type="button" data-mhist="' + c + '">История</button></td></tr>';
-  });
-}
-function mr_table() {
-  $("#mrTable").innerHTML = tbl(["Код", "Продукт", "Мин. ставка, %", "Тип ставки", "Действует с", "Примечание",
-    "Сейчас действует", ""], mr_rows(), "Продуктов не найдено");
-}
-async function mr_history(code) {
-  var box = $("#mrHist");
-  box.innerHTML = '<div class="card"><p class="note">Загружаем историю…</p></div>';
-  try {
-    var d = await api("/reference/min-rates/" + encodeURIComponent(code) + "/history");
-    box.innerHTML = '<div class="card"><h3>История минимальной ставки — ' + esc(code) + "</h3>" +
-      '<p class="note">Старые версии не удаляются: акт и расчёт берут ставку, действующую на свою дату.</p>' +
-      tbl(["Версия", "Ставка", "Тип", "Действует с", "Источник", "Кто", "Когда", "Примечание", ""],
-        (d.history || []).slice().reverse().map(function (h) {
-          return '<tr><td class="n">' + esc(h.version_id) + '</td><td class="n">' + pct(h.min_rate_pct) +
-            (h.payer_type ? " (" + esc(h.payer_type) + ")" : "") + "</td><td>" + esc(MR_TYPE[h.rate_type] || h.rate_type) +
-            "</td><td>" + esc(h.effective_from) + "</td><td>" + esc(h.source_label || MR_SRC[h.source] || "") + "</td><td>" +
-            esc(h.created_by || "—") + "</td><td>" + when(h.created_at) + "</td><td>" + esc(h.note || "") + "</td><td>" +
-            (h.active ? '<span class="v ok">действует</span>' : h.future ? '<span class="v warn">с будущей даты</span>' : "") +
-            "</td></tr>";
-        }), "Версий нет") + "</div>";
-  } catch (err) { box.innerHTML = fail(err); }
-}
-async function mr_import(apply) {
-  var m = $("#mrImpMsg"), out = $("#mrImp");
-  if (!MRS.file) { m.className = "msg bad"; m.textContent = "Выберите файл Excel (.xlsx)."; return; }
-  m.className = "msg"; m.textContent = apply ? "Записываем…" : "Проверяем файл…";
-  var fd = new FormData(); fd.append("file", MRS.file);
-  try {
-    var r = await fetch("/reference/min-rates/import?apply=" + (apply ? 1 : 0), {method: "POST", body: fd,
-                                                                              headers: {Accept: "application/json"}});
-    var j = null; try { j = await r.json(); } catch (e) { j = null; }
-    var pv = (j && j.preview) || null;
-    if (pv) {
-      out.innerHTML = tbl(["Строка", "Код", "Продукт", "Сейчас", "Станет", "Ошибки"], pv.items.map(function (x) {
-        var now = x.now && x.now.min_rate_pct != null ? pct(x.now.min_rate_pct) + ", " + (MR_TYPE[x.now.rate_type] || "") : "—";
-        var nw = x.new ? pct(x.new.min_rate_pct) + ", " + MR_TYPE[x.new.rate_type] + ", с " + esc(x.new.effective_from) : "—";
-        var er = Object.keys(x.errors || {}).map(function (k) { return esc(k + ": " + x.errors[k]); }).join("<br>");
-        return '<tr><td class="n">' + esc(x.row) + "</td><td>" + esc(x.product_code) + "</td><td>" + esc(x.product_name || "") +
-          "</td><td>" + now + "</td><td>" + nw + "</td><td>" + (er ? '<span class="v stop">' + er + "</span>" : '<span class="v ok">ок</span>') +
-          "</td></tr>";
-      }), "Строк нет");
-    }
-    if (!r.ok) {
-      m.className = "msg bad";
-      m.textContent = "Не записано: " + ((j && (typeof j.detail === "string" ? j.detail : "")) || ("сервер ответил " + r.status));
-      return;
-    }
-    if (apply) {
-      m.textContent = "Записано версий: " + (j.saved || []).length + ". Обновляем таблицу…";
-      MRS.file = null;
-      V.tariffs_minrates($("#mrRoot").parentNode);
-    } else {
-      m.textContent = pv.can_apply ? "Ошибок нет: строк " + pv.rows + ". Проверьте «станет» и нажмите «Записать»."
-        : "В файле ошибок: " + pv.errors + " — исправьте файл и загрузите снова. Ничего не записано.";
-      $("#mrApply").disabled = !pv.can_apply;
-    }
-  } catch (err) { m.className = "msg bad"; m.textContent = "Не получилось: " + err.message; }
-}
-V.tariffs_minrates = async function (el) {
-  var d = await api("/reference/min-rates");
-  MRS.items = d.items || [];
-  el.innerHTML = '<div id="mrRoot"></div><div class="card"><h3>Минимальные ставки страховщика</h3>' +
-    '<p class="note">Минимальную ставку назначает страховщик. Каждая правка — новая версия с датой начала, автором и ' +
-    "примечанием; прежние сохраняются (значения тарифной политики — версия «из тарифной политики, приказ 54-П»). " +
-    "Дата начала — не раньше сегодняшней: старые акты и расчёты остаются на ставке своей даты. Тип ставки: годовая — " +
-    "премия = сумма × ставка × дни / 365; на весь срок — премия = сумма × ставка.</p>" +
-    '<label>Поиск<input id="mrQ" placeholder="код или название продукта" value="' + esc(MRS.q) + '"></label>' +
-    '<div id="mrTable"></div><div class="msg" id="mrMsg"></div></div><div id="mrHist"></div>' +
-    '<div class="card"><h3>Импорт из Excel</h3><p class="note">Колонки: код продукта, минимальная ставка, %, тип ставки ' +
-    "(annual / fixed), дата начала, примечание. Сначала предпросмотр — «было → станет» и ошибки по строкам; записывается " +
-    'только файл без ошибок. <a href="/reference/min-rates/template.xlsx">Скачать шаблон</a>.</p>' +
-    '<label>Файл<input id="mrFile" type="file" accept=".xlsx"></label> ' +
-    '<button class="btn btn-secondary btn-sm" type="button" id="mrPrev">Предпросмотр</button> ' +
-    '<button class="btn btn-primary btn-sm" type="button" id="mrApply" disabled>Записать</button>' +
-    '<div class="msg" id="mrImpMsg"></div><div id="mrImp"></div></div>';
-  mr_table();
-  $("#mrQ").oninput = function (e) { MRS.q = e.target.value || ""; mr_table(); };
-  $("#mrFile").onchange = function (e) { MRS.file = e.target.files[0] || null; $("#mrApply").disabled = true; };
-  $("#mrPrev").onclick = function () { mr_import(false); };
-  $("#mrApply").onclick = function () { mr_import(true); };
-  el.onclick = async function (e) {
-    var b = e.target.closest ? e.target.closest("[data-msave],[data-mhist]") : null;
-    if (!b) return;
-    if (b.dataset.mhist) { mr_history(b.dataset.mhist); return; }
-    var code = b.dataset.msave, m = $("#mrMsg");
-    var get = function (f) { return el.querySelector('[data-mcode="' + code + '"][data-f="' + f + '"]').value; };
-    m.className = "msg"; m.textContent = "Сохраняем…";
-    try {
-      var j = await send("/reference/min-rates/" + encodeURIComponent(code), "PUT", {
-        min_rate_pct: get("min_rate_pct") === "" ? null : Number(get("min_rate_pct")), rate_type: get("rate_type"),
-        effective_from: get("effective_from"), note: get("note")});
-      m.textContent = "Сохранено: " + code + " — " + pct(j.saved.min_rate_pct) + ", " + MR_TYPE[j.saved.rate_type] +
-        ", с " + j.saved.effective_from + ". Новая версия № " + j.saved.version_id + ".";
-      var d2 = await api("/reference/min-rates");
-      MRS.items = d2.items || [];
-      mr_table();
-      mr_history(code);
-    } catch (err) { m.className = "msg bad"; m.textContent = "Не сохранилось: " + err.message; }
-  };
-};
-/* --- Шаблоны классов (справочник class_templates, приложение А; 30.09.2026) ---
-   GET /act/templates — список; GET /act/templates/{класс}?lang= — шаблон на языке; ?raw=1 — исходный JSON на трёх
-   языках; PUT /act/templates/{класс} — новая версия (только администратор; 422 — список ошибок структуры);
-   GET /act/templates/{класс}/history — все версии. */
-var TPL_TYPES = {money: "сумма, сум", int: "целое число", number: "число", text: "текст", bool: "да / нет", choice: "выбор из списка",
-  year: "год", kind: "вид объекта", losses: "убытки за 3 года", deductible: "франшиза", date: "дата"};
-var TPL_VIEWS = {front: "спереди", back: "сзади", left: "левый борт", right: "правый борт", plate: "заводская табличка",
-  odometer: "счётчик пробега", document: "снимок документа", interior: "внутри", facade: "фасад", roof: "кровля",
-  electrical: "электрощит", fire_safety: "средства пожаротушения", general: "общий вид", installation: "место установки",
-  packaging: "упаковка", marking: "маркировка", transport: "транспорт", other: "другое"};
-var TPL_GROUPS = {"default": "все объекты класса", vehicle: "транспорт", special: "спецтехника", property: "здание, помещение",
-  equipment: "оборудование", cargo: "груз"};
-var TPL_SRC = {file: "файл справочника", admin: "правка администратора", file_only: "файл (база только для чтения)",
-  file_pending: "новая версия из поставки (не действует)"};
-var TPLS = {cls: null, lang: "ru"};
-V.tariffs_templates = async function (el, arg) {
-  var d = await api("/act/templates?lang=ru");
-  var rows = (d.templates || []).map(function (t) {
-    // вариант — отметка «вариант класса N»; новая версия файла при действующей правке — «доступна новая версия»
-    var tag = (t.variant ? " (вариант класса " + (t.variant_of || "") + ")" : "") +
-      (t.pending_file_version ? " — доступна новая версия шаблона из поставки " + t.pending_file_version : "");
-    return '<tr class="pick" data-tcls="' + esc(t.class_code) + '"><td class="n">' + esc(t.class_code) + "</td><td>" + esc(t.name + tag) +
-      '</td><td class="n">' + esc(t.version) + "</td><td>" + when(t.updated_at) + "</td><td>" + esc(TPL_SRC[t.source] || "—") +
-      '</td><td class="n">' + (t.must || []).length + '</td><td><button class="btn btn-secondary btn-sm" type="button" data-tcls="' +
-      esc(t.class_code) + '">Открыть</button></td></tr>';
-  });
-  el.innerHTML = '<div class="card"><h3>Шаблоны по классам</h3><p class="note">Файл справочника ' + esc(d.file_version || "—") +
-    " от " + esc(d.file_date || "—") + '. Доли рисков, веса и параметры — оценка разработчика, не утверждено страховщиком (не калиброваны по убыткам компании). ' +
-    "Все классы общего страхования 1–18; варианты 13з и 16у — свои шаблоны.</p>" +
-    tbl(["Класс", "Название", "Версия", "Изменён", "Источник", "Обязательных полей", ""], rows, "Шаблонов нет") + "</div>" +
-    '<div id="tplOne"></div>';
-  el.onclick = function (e) {
-    var b = e.target.closest ? e.target.closest("[data-tcls],[data-tlang],[data-tsave],[data-treset]") : null;
-    if (!b) return;
-    if (b.dataset.tcls) { TPLS.cls = b.dataset.tcls; tpl_one(); }
-    else if (b.dataset.tlang) { TPLS.lang = b.dataset.tlang; tpl_one(); }
-    else if (b.dataset.tsave != null) tpl_save();
-    else if (b.dataset.treset != null) tpl_one();
-  };
-  if (arg) TPLS.cls = String(arg);
-  if (TPLS.cls) tpl_one();
-};
-function tpl_list(title, items) {
-  return items && items.length ? "<span>" + esc(title) + "</span><b>" + items.map(esc).join("<br>") + "</b>" : "";
-}
-async function tpl_one() {
-  var box = $("#tplOne"), c = TPLS.cls;
-  if (!box || !c) return;
-  box.innerHTML = '<div class="card"><p class="hint">Загружаем шаблон класса ' + esc(c) + "…</p></div>";
-  try {
-    var one = await api("/act/templates/" + encodeURIComponent(c) + "?lang=" + encodeURIComponent(TPLS.lang));
-    var raw = await api("/act/templates/" + encodeURIComponent(c) + "?raw=1");
-    var hist = await api("/act/templates/" + encodeURIComponent(c) + "/history");
-  } catch (e) { box.innerHTML = fail(e); return; }
-  var t = one.template || {};
-  var fields = function (fs) {
-    return (fs || []).map(function (f) {
-      return f.label + " — " + (TPL_TYPES[f.type] || f.type) + (f.options && f.options.length ? " (" + f.options.length + " вар.)" : "");
-    });
-  };
-  var risks = one.perils && one.perils.length ? one.perils.map(function (r) { return r.name + " — " + String(r.share_pct).replace(".", ",") + " %" + (r.catastrophic ? ", катастрофический" : ""); })
-    : ((t.risks || {}).items || []).map(function (r) { return r.label + " — " + String(r.share_pct).replace(".", ",") + " %" + (r.catastrophic ? ", катастрофический" : ""); });
-  var views = Object.keys(t.required_views || {}).map(function (g) {
-    return (TPL_GROUPS[g] || g) + ": " + (t.required_views[g] || []).map(function (v) { return TPL_VIEWS[v] || v; }).join(", ");
-  });
-  var langs = ["ru", "uz", "en"].map(function (l) {
-    return '<button type="button" class="btn btn-sm ' + (l === TPLS.lang ? "btn-primary" : "btn-secondary") + '" data-tlang="' + l +
-      '" aria-pressed="' + (l === TPLS.lang) + '">' + {ru: "Русский", uz: "Oʻzbekcha", en: "English"}[l] + "</button>";
-  }).join("");
-  box.innerHTML = '<div class="card"><div class="bar" style="justify-content:space-between"><h3 style="margin:0">Класс ' + esc(one.class_code) +
-    " — " + esc(t.name) + '</h3><div class="bar" style="margin:0" role="group" aria-label="Язык шаблона">' + langs + "</div></div>" +
-    '<p class="note">Версия ' + esc(one.version) + " · " + esc(TPL_SRC[one.source] || "—") + " · изменён " + when(one.updated_at) +
-    (one.updated_by ? " · " + esc(one.updated_by) : "") + ". Коэффициенты экспертные, не калиброваны.</p>" +
-    (one.pending_file_version ? '<p class="note">Доступна новая версия шаблона из поставки ' + esc(one.pending_file_version) +
-      " — она в истории версий и не действует: действует правка администратора. Чтобы принять её, перенесите изменения в JSON и сохраните.</p>" : "") +
-    '<div class="kv tpl-kv">' +
-    "<span>Объект</span><b>" + esc((t.object || {}).description) + "</b>" +
-    tpl_list("Виды объекта", ((t.object || {}).kinds || []).map(function (k) { return k.label; })) +
-    tpl_list("Обязательные поля (до 4)", fields(t.must)) +
-    tpl_list("Дополнительные поля", fields(t.optional)) +
-    tpl_list("Риски и доли", risks) +
-    "<span>Сценарии убытка</span><b>" + esc((t.scenario_rule || {}).text || "—") + "</b>" +
-    tpl_list("Ракурсы фото", views) +
-    tpl_list("Документы", ((t.documents || {}).items || [])) +
-    tpl_list("Заметки", (t.notes || []).map(function (n) { return typeof n === "string" ? n : (n && (n.text || n.label)) || ""; }).filter(Boolean)) +
-    "</div></div>" +
-    '<div class="card"><h3>Правка шаблона</h3><p class="note">Исходный JSON на трёх языках. Сохранение создаёт новую версию ' +
-    "(старая остаётся в истории). Сервер проверяет структуру: доли рисков 100 ± 0,5, коды оговорок и мероприятий существуют, " +
-    "обязательных полей не больше четырёх. Править может только администратор.</p>" +
-    '<label>JSON шаблона<textarea id="tplRaw" spellcheck="false" style="min-height:360px;font:12px/1.45 var(--mono);white-space:pre"></textarea></label>' +
-    '<label style="margin-top:8px">Что изменено и почему<input id="tplNote" maxlength="300" placeholder="например: доля угона 30 % по данным 2025 года"></label>' +
-    '<div class="actions"><button type="button" class="btn btn-primary" data-tsave="1">Сохранить новую версию</button>' +
-    '<button type="button" class="btn btn-secondary" data-treset="1">Вернуть как сохранено</button></div>' +
-    '<div class="msg" id="tplMsg" role="status"></div></div>' +
-    '<div class="card"><h3>История версий</h3>' +
-    tbl(["Версия", "Источник", "Когда", "Кто", "Примечание"], (hist.history || []).slice().reverse().map(function (h) {
-      return '<tr><td class="n">' + esc(h.version) + "</td><td>" + esc(TPL_SRC[h.source] || h.source) + "</td><td>" + when(h.updated_at) +
-        "</td><td>" + esc(h.updated_by || "—") + "</td><td>" + esc(h.note || "") + "</td></tr>";
-    }), "Версий нет") + "</div>";
-  $("#tplRaw").value = JSON.stringify(raw.raw || {}, null, 2);
-}
-async function tpl_save() {
-  var m = $("#tplMsg"), c = TPLS.cls, tpl;
-  m.className = "msg";
-  try { tpl = JSON.parse($("#tplRaw").value); }
-  catch (e) { m.className = "msg bad"; m.textContent = "JSON не разобран: " + e.message + ". Проверьте кавычки и запятые — версия не сохранена."; return; }
-  m.textContent = "Сохраняем…";
-  var r, body = null;
-  try {
-    r = await fetch("/act/templates/" + encodeURIComponent(c), {method: "PUT",
-      headers: {"Content-Type": "application/json", Accept: "application/json"},
-      body: JSON.stringify({template: tpl, note: $("#tplNote").value.trim(), lang: TPLS.lang})});
-    try { body = await r.json(); } catch (e) { body = null; }
-  } catch (e) { m.className = "msg bad"; m.textContent = "Сервер не ответил — версия не сохранена. Повторите позже."; return; }
-  if (r.status === 422 && body && body.errors) {
-    m.className = "msg bad";
-    m.innerHTML = "Версия не сохранена — исправьте шаблон:<ul>" + body.errors.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
-    return;
-  }
-  if (!r.ok) {
-    m.className = "msg bad";
-    m.textContent = "Версия не сохранена: " + (body && body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) :
-      r.status === 403 ? "нужны права администратора" : "сервер ответил " + r.status) + ".";
-    return;
-  }
-  await tpl_one();
-  var m2 = $("#tplMsg");
-  if (m2) m2.textContent = "Сохранено: версия " + (body && body.version ? body.version : "") + ". История обновлена.";
-}
-V.tariffs_osgor = async function (el) {
-  var d = await api("/osgor/activities");
-  el.innerHTML = '<div class="card"><h3>ОСГОР: виды деятельности</h3>' +
-    '<p class="note">Справочник коэффициентов по видам деятельности работодателя. Норма: ' + esc(d.legal_ref) + "</p>" +
-    '<div class="tiles"><div class="tile"><b>' + esc(d.total) + '</b><span>видов деятельности</span></div>' +
-    '<div class="tile"><b>' + esc(d.categories) + '</b><span>категорий риска</span></div>' +
-    '<div class="tile"><b>' + esc(String(d.kst_min).replace(".", ",") + " – " + String(d.kst_max).replace(".", ",")) +
-    '</b><span>коэффициент от и до</span></div></div>' +
-    '<form class="f" id="osf"><label>Поиск по названию или коду<input name="q" placeholder="строительство"></label>' +
-    '<button class="btn btn-primary">Найти</button></form><div id="osBody"></div></div>';
-  var show = async function (q) {
-    var b = $("#osBody"); b.textContent = "Ищем…";
-    try {
-      var r = await api("/osgor/activities" + (q ? "?q=" + encodeURIComponent(q) : ""));
-      var items = r.items || [];
-      if (!items.length) { b.innerHTML = '<p class="note">' + (q ? "По запросу ничего не нашлось." : "Введите слово в поиск — справочник большой, целиком он не выводится.") + "</p>"; return; }
-      var cols = Object.keys(items[0]);
-      b.innerHTML = tbl(cols.map(esc), items.slice(0, 120).map(function (x) {
-        return "<tr>" + cols.map(function (c) { return "<td>" + esc(x[c]) + "</td>"; }).join("") + "</tr>"; }));
-    } catch (e) { b.innerHTML = fail(e); }
-  };
-  $("#osf").onsubmit = function (e) { e.preventDefault(); show(e.target.q.value.trim()); };
-  show("");
-};
-V.tariffs_vehicle = async function (el) {
-  var d = await api("/vehicle/reference"), out = "";
-  Object.keys(d).forEach(function (k) {
-    if (Array.isArray(d[k])) {
-      out += '<div class="card"><h3>' + esc(k) + "</h3>" + tbl(["Значение"], d[k].map(function (x) {
-        return "<tr><td>" + esc(typeof x === "object" ? JSON.stringify(x) : x) + "</td></tr>"; })) + "</div>";
-    } else {
-      out += '<div class="card"><h3>' + esc(k) + '</h3><p class="note">' +
-        esc(typeof d[k] === "object" ? JSON.stringify(d[k]) : d[k]) + "</p></div>";
-    }
-  });
-  el.innerHTML = '<p class="hint">Справочник, по которому система относит машину к группе и классу.</p><div class="cols">' + out + "</div>";
-};
-V.tariffs_review = async function (el) {
-  var d = await api("/law-events?limit=12");
-  el.innerHTML = '<div class="card"><h3>Правила, требующие пересмотра</h3>' +
-    '<p class="note">Изменился акт, на который ссылается проверка — робот-юрист помечает её. Расчёты не блокируются: ' +
-    'правило работает по старой формулировке, чтобы прошлые расчёты воспроизводились. Пометку снимает человек.</p>' +
-    tbl(["Правило", "Название", "Важность", "Норма", "Почему помечено", "С какого дня", ""],
-      (d.rules_to_review || []).map(function (r) {
-        return '<tr><td style="font-family:var(--mono);font-size:11.5px">' + esc(r.code) + "</td><td>" + esc(r.name) +
-          "</td><td>" + esc(r.severity) + "</td><td>" + esc(r.legal_ref || "—") + "</td><td>" + esc(r.review_reason || "—") +
-          "</td><td>" + esc(String(r.review_since || "").slice(0, 10)) + '</td><td><button class="btn btn-secondary btn-sm" data-ok="' + esc(r.code) +
-          '">Снять пометку</button></td></tr>';
-      }), "Правил, требующих пересмотра, нет") + '<div class="msg" id="lwMsg"></div></div>' +
-    '<div class="card"><h3>Последние события</h3>' +
-    tbl(["Когда", "Вид", "Что", "Источник"], (d.items || []).map(function (x) {
-      return "<tr><td>" + when(x.created_at) + "</td><td>" + esc(x.kind) + "</td><td>" +
-        (x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + "</a>" : esc(x.title)) +
-        '<div style="color:var(--muted);font-size:11.5px">' + esc(x.summary || "") + "</div></td><td>" + esc(x.source) + "</td></tr>";
-    }), "Событий пока нет") + "</div>";
-  el.onclick = async function (e) {
-    var code = e.target.dataset ? e.target.dataset.ok : null; if (!code) return;
-    var note = prompt("Одной строкой: почему изменение не касается правила " + code + " или что уже поправлено?");
-    if (!note) return;
-    var m = $("#lwMsg"); m.className = "msg"; m.textContent = "Отправляем…";
-    try { await send("/rules/" + encodeURIComponent(code) + "/review-ok", "POST", {who: "admin", note: note});
-          open_section("tariffs", "review"); }
-    catch (err) { m.className = "msg bad"; m.textContent = "Не вышло: " + err.message; }
-  };
-};
-/* Калибровка — две вкладки, чтобы меню не разрасталось: страховые случаи (исходные данные) и готовая страница калибровки. */
-V.tariffs_calibration = function (el) {
-  el.innerHTML = '<div class="seg" role="tablist" aria-label="Калибровка" style="margin-bottom:12px">' +
-    '<button class="btn btn-secondary btn-sm" type="button" role="tab" data-tab="claims" aria-pressed="true">Страховые случаи</button>' +
-    '<button class="btn btn-secondary btn-sm" type="button" role="tab" data-tab="coef" aria-pressed="false">Калибровка коэффициентов</button></div>' +
-    '<div id="calBody"></div>';
-  var show = function (tab) {
-    el.querySelectorAll("[data-tab]").forEach(function (x) { x.setAttribute("aria-pressed", String(x.dataset.tab === tab)); });
-    if (tab === "claims") claims_tab($("#calBody")); else $("#calBody").innerHTML = frame("/calibration", "Калибровка");
-  };
-  el.querySelector(".seg").onclick = function (e) { var b = e.target.closest("[data-tab]"); if (b) show(b.dataset.tab); };
-  show("claims");
-};
-
-/* --- Загрузка из Excel: общее для продуктов и страховых случаев (app/product_import.py, app/claims_import.py) ---
-   Порядок один: файл → предпросмотр с ошибками по строкам → «Применить» по token. Записываются только строки без ошибок. */
-async function upload_xlsx(path, file) {
-  var fd = new FormData(); fd.append("file", file);
-  var r = await fetch(path, {method: "POST", body: fd, headers: {Accept: "application/json"}});
-  var b = null; try { b = await r.json(); } catch (e) { b = null; }
-  if (!r.ok) {
-    var d = b && b.detail ? (typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail)) : "";
-    if (r.status === 401) d = d || "Нужно войти в систему";
-    if (r.status === 403) d = d || "Загрузка открыта только администратору";
-    throw new Error(d || ("сервер ответил " + r.status));
-  }
-  return b;
-}
+/* предпросмотр загрузки Excel: файл → строки с ошибками → «Применить» по token; пишутся только строки без ошибок */
 var IMP_ACT = {create: ["ok", "создать"], update: ["warn", "обновить"], skip: ["dim", "без изменений"]};
 function imp_act(it) {
   if (it.errors && it.errors.length) return '<span class="v stop">ошибка</span>';
@@ -1096,701 +253,105 @@ function imp_notes(it) {
   var out = (it.errors || []).map(function (x) { return '<span class="err">' + esc(x) + "</span>"; })
     .concat((it.warnings || []).map(function (x) { return '<span class="wrn">' + esc(x) + "</span>"; }))
     .concat((it.changes || []).map(function (x) { return '<span class="chg">' + esc(x) + "</span>"; }));
-  return out.length ? out.join("") : '<span class="hint">—</span>';
+  return out.length ? out.join("") : "—";
 }
 function imp_tiles(list) {
   return '<div class="tiles" style="margin-top:12px">' + list.map(function (t) {
     return '<div class="tile' + (t[2] ? " " + t[2] : "") + '"><b>' + esc(t[0]) + "</b><span>" + esc(t[1]) + "</span></div>";
   }).join("") + "</div>";
 }
-function money(n) { return n == null || n === "" ? "—" : num(n) + " сум"; }
-function ratio(x) { return x == null ? "—" : (Number(x) * 100).toFixed(1).replace(".", ",") + "%"; }
-function ddmm(s) { var p = String(s || "").slice(0, 10).split("-"); return esc(p.length === 3 ? p[2] + "." + p[1] + "." + p[0] : (s || "—")); }
-
-/* --- продукты из Excel: карточка в «Версии, ставки, продукты», рядом с «Новый продукт» --- */
-function prod_import_card() {
-  return '<div class="card" id="pImp"><h3>Продукты из Excel</h3>' +
-    '<p class="note">Когда продуктов много: скачайте шаблон, заполните и загрузите. Сначала покажем, что изменится; ' +
-    "в справочник запишем только после «Применить» и только строки без ошибок. Из справочника ничего не удаляется.</p>" +
-    '<div class="bar"><button class="btn btn-primary" type="button" id="pPick">Загрузить файл</button>' +
-    '<a class="btn btn-secondary" href="/reference/products/template.xlsx" download>Скачать шаблон</a>' +
-    '<input type="file" id="pFile" accept=".xlsx,.xlsm" hidden></div>' +
-    '<div id="pWork"></div><div id="pList"></div></div>';
-}
-function prod_import_bind() {
-  $("#pPick").onclick = function () { $("#pFile").value = ""; $("#pFile").click(); };
-  $("#pFile").onchange = async function () {
-    var f = this.files[0], w = $("#pWork");
+function pick_file(btn, input, box, path, show) {
+  btn.onclick = function () { input.value = ""; input.click(); };
+  input.onchange = async function () {
+    var f = this.files[0];
     if (!f) return;
-    w.innerHTML = '<p class="hint">Разбираем файл «' + esc(f.name) + "»…</p>";
-    try { prod_preview(await upload_xlsx("/reference/products/import", f)); }
-    catch (e) { w.innerHTML = '<p class="flag bad">Файл не принят: ' + esc(e.message) + ". Проверьте, что это шаблон из кнопки «Скачать шаблон», и загрузите снова.</p>"; }
-  };
-  prod_list();
-}
-function prod_preview(b) {
-  var w = $("#pWork"), c = {create: 0, update: 0, skip: 0};
-  b.items.forEach(function (it) { if (!it.errors.length) c[it.action] = (c[it.action] || 0) + 1; });
-  var rows = b.items.map(function (it) {
-    return imp_row(it) + '<td class="n">' + esc(it.row) + "</td><td>" + esc(it.product_code || "—") + "</td><td>" + esc(it.name || "—") +
-      "</td><td>" + esc((it.classes || []).join(", ") || "—") + '</td><td class="n">' + (it.rate_pct == null ? "—" : pct(it.rate_pct)) +
-      '</td><td class="n">' + (it.min_rate_pct == null ? "—" : pct(it.min_rate_pct)) + "</td><td>" + esc(it.rate_type || "—") +
-      "</td><td>" + ddmm(it.effective_from) + "</td><td>" + esc(it.status || "—") + "</td><td>" + imp_act(it) +
-      '</td><td class="notes">' + imp_notes(it) + "</td></tr>";
-  });
-  w.innerHTML = '<h3 style="margin-top:14px">Предпросмотр' + (b.file_name ? ": " + esc(b.file_name) : "") + "</h3>" +
-    '<p class="note">Пока ничего не записано. Красные строки — с ошибками, их не запишем; жёлтые — с предупреждениями, их запишем. ' +
-    "Предпросмотр действует " + esc(b.expires_min || 30) + " мин.</p>" +
-    imp_tiles([[c.create, "будет создано"], [c.update, "будет обновлено"], [c.skip, "пропущено — без изменений"],
-               [b.error_count, "с ошибками — не запишем", b.error_count ? "bad" : ""]]) +
-    ((b.ignored_columns || []).length ? '<p class="flag">Колонки не из шаблона пропущены: ' + esc(b.ignored_columns.join(", ")) + "</p>" : "") +
-    tbl(["Строка", "Код", "Название", "Классы", "Ставка", "Мин. ставка", "Тип ставки", "С даты", "Статус", "Действие", "Что изменится / замечания"],
-        rows, "В файле нет строк с продуктами", "tall") +
-    '<div class="actions"><button class="btn btn-primary" type="button" id="pApply"' + (b.to_write ? "" : " disabled") +
-    ">Применить: записать " + esc(b.to_write || 0) + " стр.</button>" +
-    '<button class="btn btn-secondary" type="button" id="pCancel">Отменить</button></div><div class="msg" id="pMsg"></div>' +
-    (b.to_write ? "" : '<p class="hint">Записывать нечего: все строки либо с ошибками, либо без изменений.</p>');
-  $("#pCancel").onclick = function () { w.innerHTML = ""; };
-  $("#pApply").onclick = async function () {
-    var m = $("#pMsg"), btn = this;
-    btn.disabled = true; m.className = "msg"; m.textContent = "Записываем в справочник…";
-    try {
-      var r = await send("/reference/products/import/apply", "POST", {token: b.token});
-      m.textContent = "Готово: создано " + r.created + ", обновлено " + r.updated + ", пропущено " + r.skipped + ".";
-      $("#pCancel").textContent = "Закрыть предпросмотр";
-      prod_list();
-    } catch (e) {
-      btn.disabled = false; m.className = "msg bad";
-      m.textContent = "Не записано: " + e.message +
-        ". Если предпросмотр устарел — загрузите файл ещё раз.";
-    }
+    box.innerHTML = '<p class="hint">Разбираем файл «' + esc(f.name) + "»…</p>";
+    try { show(await upload_xlsx(path, f)); }
+    catch (e) { box.innerHTML = '<p class="flag bad">Файл не принят: ' + esc(e.message) + ". Скачайте шаблон, заполните его и загрузите снова.</p>"; }
   };
 }
-var PRODUCTS_CHANGED = null;   /* раздел «Продукты» обновляет свою таблицу после «Применить» */
-async function prod_list() {
-  if (typeof PRODUCTS_CHANGED === "function" && $("#prdTable")) PRODUCTS_CHANGED();
-  var box = $("#pList"); if (!box) return;
-  box.innerHTML = '<p class="hint">Загружаем справочник продуктов…</p>';
-  try {
-    var rows = await api("/reference/products");
-    box.innerHTML = '<h3 style="margin-top:16px">Продукты в справочнике: ' + rows.length + "</h3>" +
-      tbl(["Код", "Название", "Классы", "Тариф", "Статус"], rows.map(function (p) {
-        return "<tr><td>" + esc(p.code) + "</td><td>" + esc(p.name) + "</td><td>" + esc(p.classes || "—") + "</td><td>" +
-          esc(p.rate_text || "—") + '</td><td><span class="v ' + (p.status === "действует" ? "ok" : "dim") + '">' + esc(p.status || "—") + "</span></td></tr>";
-      }), "Продуктов пока нет", "tall");
-  } catch (e) { box.innerHTML = '<p class="flag bad">Список продуктов не загрузился: ' + esc(e.message) + "</p>"; }
-}
 
-/* --- страховые случаи: вкладка в «Калибровка» (данные о случаях — основа калибровки по убыткам) --- */
-var CLM = {years: 3};
-function claims_tab(box) {
-  box.innerHTML = '<div class="card"><h3>Загрузка страховых случаев</h3>' +
-    '<p class="note">Файл Excel по шаблону: одна строка — один страховой случай. Повторная загрузка того же номера дела обновляет запись. ' +
-    "ФИО, паспорт, телефон и адрес страхователя не нужны — такие колонки система не загружает.</p>" +
-    '<div class="bar"><button class="btn btn-primary" type="button" id="cPick">Загрузить файл</button>' +
-    '<a class="btn btn-secondary" href="/claims/template.xlsx" download>Скачать шаблон</a>' +
-    '<input type="file" id="cFile" accept=".xlsx,.xlsm" hidden></div><div id="cWork"></div></div>' +
-    '<div class="card"><div class="bar" style="justify-content:space-between"><div><h3>Убытки по продуктам</h3>' +
-    '<p class="note" id="cPeriod" style="margin:0">Загружаем…</p></div>' +
-    '<div class="seg" role="group" aria-label="Период">' + [1, 3, 5].map(function (y) {
-      return '<button class="btn btn-secondary btn-sm" type="button" data-years="' + y + '" aria-pressed="' + (y === CLM.years) + '">' +
-        y + (y === 1 ? " год" : y === 3 ? " года" : " лет") + "</button>";
-    }).join("") + '</div></div><div id="cSum"></div><p class="hint" id="cNote" style="margin-top:8px"></p></div>' +
-    '<div class="card"><h3>Последние загрузки</h3><div id="cBatches"><p class="hint">Загружаем…</p></div></div>';
-  $("#cPick").onclick = function () { $("#cFile").value = ""; $("#cFile").click(); };
-  $("#cFile").onchange = async function () {
-    var f = this.files[0], w = $("#cWork");
-    if (!f) return;
-    w.innerHTML = '<p class="hint">Разбираем файл «' + esc(f.name) + "»…</p>";
-    try { claims_preview(await upload_xlsx("/claims/import", f)); }
-    catch (e) { w.innerHTML = '<p class="flag bad">Файл не принят: ' + esc(e.message) + ". Проверьте, что это шаблон из кнопки «Скачать шаблон», и загрузите снова.</p>"; }
-  };
-  box.querySelector(".seg").onclick = function (e) {
-    var b = e.target.closest("button[data-years]"); if (!b) return;
-    CLM.years = Number(b.dataset.years);
-    box.querySelectorAll(".seg button").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
-    claims_summary();
-  };
-  claims_summary();
-}
-function claims_preview(b) {
-  var w = $("#cWork"), pd = b.pd_columns_ignored || [];
-  var other = (b.warnings || []).filter(function (x) { return x.indexOf("персональными данными") < 0; });
-  var rows = b.items.map(function (it) {
-    return imp_row(it) + '<td class="n">' + esc(it.row) + '</td><td class="nw">' + esc(it.claim_no || "—") + "</td><td>" + imp_act(it) +
-      '</td><td class="notes">' + imp_notes(it) + "</td><td>" + esc(it.product_code || "—") +
-      "</td><td>" + esc(it.class_code || "—") + '</td><td class="nw">' + esc(it.contract_no || "—") + "</td><td>" + esc(it.branch || "—") +
-      (it.region ? '<br><span class="hint">' + esc(it.region) + "</span>" : "") + "</td><td>" + ddmm(it.event_date) +
-      "</td><td>" + esc(it.status || "—") + '</td><td class="n">' + money(it.claimed) + '</td><td class="n">' + money(it.paid) +
-      '</td><td class="n">' + money(it.sum_insured) + '</td><td class="n">' + money(it.premium) + "</td></tr>";
-  });
-  var good = (b.create_count || 0) + (b.update_count || 0);
-  w.innerHTML = '<h3 style="margin-top:14px">Предпросмотр' + (b.file_name ? ": " + esc(b.file_name) : "") + "</h3>" +
-    (pd.length ? '<p class="flag bad"><b>Колонки с персональными данными не загружены:</b> ' + esc(pd.join(", ")) +
-      ". Их содержимое не сохраняется в системе. В следующий раз удалите эти колонки из файла.</p>" : "") +
-    other.map(function (x) { return '<p class="flag">' + esc(x) + "</p>"; }).join("") +
-    '<p class="note">Пока ничего не записано. Красные строки — с ошибками, их не загрузим; жёлтые — с предупреждениями, их загрузим.' +
-    (b.expires_min ? " Предпросмотр действует " + esc(b.expires_min) + " мин." : "") + "</p>" +
-    imp_tiles([[b.create_count || 0, "будет создано"], [b.update_count || 0, "будет обновлено"],
-               [b.error_count || 0, "с ошибками — не загрузим", b.error_count ? "bad" : ""]]) +
-    tbl(["Строка", "№ дела", "Действие", "Замечания", "Продукт", "Класс", "Договор", "Филиал / регион", "Дата события", "Статус",
-         "Заявлено", "Выплачено", "Страховая сумма", "Премия"], rows, "В файле нет строк со страховыми случаями", "tall") +
-    '<div class="actions"><button class="btn btn-primary" type="button" id="cApply"' + (good ? "" : " disabled") +
-    ">Применить: загрузить " + good + " стр.</button>" +
-    '<button class="btn btn-secondary" type="button" id="cCancel">Отменить</button></div><div class="msg" id="cMsg"></div>' +
-    (good ? "" : '<p class="hint">Загружать нечего: в каждой строке есть ошибка. Исправьте файл и загрузите снова.</p>');
-  $("#cCancel").onclick = function () { w.innerHTML = ""; };
-  $("#cApply").onclick = async function () {
-    var m = $("#cMsg"), btn = this;
-    btn.disabled = true; m.className = "msg"; m.textContent = "Загружаем случаи…";
-    try {
-      var r = await send("/claims/import/apply", "POST", {token: b.token});
-      m.innerHTML = "Загрузка № " + esc(r.batch_id) + ": строк " + r.rows + ", создано " + r.created + ", обновлено " + r.updated +
-        ", пропущено " + r.skipped + "." + ((r.errors || []).length ? '<br>Пропущены из-за ошибок: ' + r.errors.map(function (x) {
-          return "строка " + esc(x.row) + (x.claim_no ? " (дело " + esc(x.claim_no) + ")" : ""); }).join(", ") + "." : "");
-      $("#cCancel").textContent = "Закрыть предпросмотр";
-      claims_summary();
-    } catch (e) {
-      btn.disabled = false; m.className = "msg bad";
-      m.textContent = "Не загружено: " + e.message + ". Если предпросмотр устарел — загрузите файл ещё раз.";
-    }
-  };
-}
-async function claims_summary() {
-  var s = $("#cSum"); if (!s) return;
-  s.innerHTML = '<p class="hint">Считаем…</p>';
-  try {
-    var d = await api("/claims/summary?years=" + CLM.years), t = d.totals || {};
-    $("#cPeriod").textContent = "Период: с " + ddmm(d.period_from) + " по " + ddmm(d.period_to) + ". Суммы — в сумах.";
-    var refused = 0, paidc = 0;
-    var rows = d.items.map(function (x) {
-      refused += x.refused || 0; paidc += x.paid_cases || 0;
-      return "<tr><td>" + esc(x.product_code) + (x.product_name ? '<br><span class="hint">' + esc(x.product_name) + "</span>" : "") +
-        "</td><td>" + esc(x.class_code) + (x.class_name ? '<br><span class="hint">' + esc(x.class_name) + "</span>" : "") +
-        '</td><td class="n">' + num(x.cases) + '</td><td class="n">' + num(x.refused) + '</td><td class="n">' + num(x.paid_cases) +
-        '</td><td class="n">' + money(x.claimed) + '</td><td class="n">' + money(x.paid) + '</td><td class="n">' + money(x.avg_paid) +
-        '</td><td class="n">' + money(x.premium) + '</td><td class="n">' + ratio(x.loss_ratio) + "</td></tr>";
-    });
-    if (rows.length) rows.push('<tr class="tot"><td colspan="2">Итого</td><td class="n">' + num(t.cases) + '</td><td class="n">' + num(refused) +
-      '</td><td class="n">' + num(paidc) + '</td><td class="n">' + money(t.claimed) + '</td><td class="n">' + money(t.paid) +
-      '</td><td class="n">—</td><td class="n">' + money(t.premium) + '</td><td class="n">' + ratio(t.loss_ratio) + "</td></tr>");
-    s.innerHTML = tbl(["Продукт", "Класс", "Случаев", "Отказов", "С выплатой", "Заявлено", "Выплачено", "Средняя выплата", "Премия", "Убыточность"],
-      rows, "За выбранный период случаев нет. Загрузите файл выше.", "tall");
-    $("#cNote").textContent = d.note || "";
-    $("#cBatches").innerHTML = tbl(["№", "Файл", "Строк", "Создано", "Обновлено", "Пропущено", "Кто загрузил", "Когда"],
-      (d.batches || []).map(function (x) {
-        return '<tr><td class="n">' + esc(x.id) + "</td><td>" + esc(x.file_name || "—") + '</td><td class="n">' + num(x.rows) +
-          '</td><td class="n">' + num(x.created) + '</td><td class="n">' + num(x.updated) + '</td><td class="n">' + num(x.skipped) +
-          "</td><td>" + esc(x.loaded_by || "—") + "</td><td>" + when(x.loaded_at) + "</td></tr>";
-      }), "Загрузок пока нет");
-  } catch (e) {
-    s.innerHTML = '<p class="flag bad">Сводка не загрузилась: ' + esc(e.message) + "</p>";
-    $("#cPeriod").textContent = ""; $("#cBatches").innerHTML = '<p class="hint">—</p>';
-  }
-}
-
-
-/* --- Рынок и данные --- */
-V.market_stats = function (el) { el.innerHTML = frame("/stats", "Динамика рынка"); };
-V.market_capacity = function (el) { el.innerHTML = frame("/capacity-page", "Ёмкость и удержание"); };
-V.market_portfolio = function (el) { el.innerHTML = frame("/portfolio", "Портфель"); };
-V.market_statagency = async function (el) {
-  var s = await api("/stat/status"), c = await api("/stat/catalog");
-  var sets = c["Наборы"] || [];
-  el.innerHTML = '<div class="tiles"><div class="tile"><b>' + esc(s["Наборов"]) + '</b><span>наборов</span></div>' +
-    '<div class="tile"><b>' + when(s["Последнее массовое обновление"]) + '</b><span>последнее обновление</span></div>' +
-    '<div class="tile"><b>' + (s["Обновление идёт"] ? "идёт" : "нет") + '</b><span>обновление сейчас</span></div></div>' +
-    (s["Ошибка расписания"] ? '<p class="flag">Ошибка расписания: ' + esc(s["Ошибка расписания"]) + "</p>" : "") +
-    '<div class="card"><h3>Реестр наборов</h3><p class="note">Периодичность: ' + esc(s["Периодичность обновления"]) + "</p>" +
-    tbl(["Набор", "Источник", "Единица", "Периодичность", "Страница"], sets.map(function (x) {
-      return "<tr><td>" + esc(x["Набор"]) + "</td><td>" + esc(x["Источник"]) + "</td><td>" + esc(x["Единица"]) +
-        "</td><td>" + esc(x["Периодичность"]) + '</td><td><a href="' + esc(x["Страница набора"]) +
-        '" target="_blank" rel="noopener">открыть</a></td></tr>'; }), "Наборов нет") + "</div>" +
-    '<div class="card"><h3>Ряды</h3><p class="note">Последние строки. Набор можно выбрать.</p>' +
-    '<form class="f" id="ssf"><label>Набор<select name="dataset"><option value="">все</option>' +
-    sets.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x["Набор"]) + "</option>"; }).join("") +
-    '</select></label><button class="btn btn-primary">Показать ряды</button></form><div id="ssBody"></div></div>';
-  var show = async function (ds) {
-    var b = $("#ssBody"); b.textContent = "Загружаем…";
-    try {
-      var r = await api("/stat/series?limit=50" + (ds ? "&dataset=" + encodeURIComponent(ds) : ""));
-      b.innerHTML = '<p class="note">Всего строк: ' + esc(r["Всего строк"]) + ", показано: " + esc(r["Показано"]) + "</p>" +
-        tbl(["Набор", "Регион", "Период", "Значение", "Единица", "Забрано"], (r["Строки"] || []).map(function (x) {
-          return "<tr><td>" + esc(x["Набор"]) + "</td><td>" + esc(x["Регион"]) + "</td><td>" + esc(x.period) +
-            '</td><td class="n">' + esc(x.value) + "</td><td>" + esc(x.unit) + "</td><td>" + when(x.fetched_at) + "</td></tr>"; }));
-    } catch (e) { b.innerHTML = fail(e); }
-  };
-  /* поле берём через elements: e.target.dataset — это служебный DOMStringMap формы, а не наш <select name="dataset"> */
-  $("#ssf").onsubmit = function (e) { e.preventDefault(); show(e.target.elements["dataset"].value); };
-  show("");
-};
-V.market_finance = function (el) {
-  el.innerHTML = '<div class="card"><h3>Собственные средства и резервы</h3>' +
-    '<p class="note">Нужны для лимита 20% на один риск (Положение 1806, п. 15). Пока не введены — лимит не проверяется, ' +
-    'а на странице «Ёмкость и удержание» цифры помечены как временные.</p>' +
-    '<form class="f" data-url="/admin/financials" data-m="PUT"><label>Дата отчёта<input name="report_date" type="date" required></label>' +
-    '<label>Собственные средства, сум<input name="own_funds" type="number" required></label>' +
-    '<label>Страховые резервы, сум<input name="reserves" type="number" required></label>' +
-    '<label>Источник<input name="source" placeholder="баланс ф.1, отчёт о резервах"></label>' +
-    '<button class="btn btn-primary">Сохранить показатели</button></form><div class="msg"></div></div>' +
-    '<div id="finRes"><p class="hint">Загружаем отчёты о резервах…</p></div>' +
-    '<div class="card"><h3>Выделенные активы и платёжеспособность</h3>' +
-    '<p class="note">Эти два отчёта пока загружаются не через экран (ответ на вопрос № 158). Как есть они видны на странице ' +
-    '<a href="/capacity-page" target="_blank" rel="noopener">«Ёмкость и удержание»</a>.</p></div>';
-  bind_forms(el);
-  fin_reserves($("#finRes"));
-};
-
-/* Страховые резервы по периодам (app/finance.py): вручную или файлом Excel, предпросмотр, замена с историей. */
-var FIN = {st: null, preview: null};
-function fin_parse(s) {                      /* «1 250 000,50» → 1250000.5; пусто → null; не число → NaN */
-  s = String(s == null ? "" : s).replace(/[\s  ]/g, "").replace(",", ".");
-  return s === "" ? null : (/^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN);
-}
-function fin_fmt(input) {                    /* разделители тысяч прямо в поле */
-  var v = input.value.replace(/[^\d,.]/g, "").replace(".", ","), p = v.split(",");
-  var int = p[0].replace(/^0+(?=\d)/, "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  input.value = p.length > 1 ? int + "," + p.slice(1).join("").slice(0, 2) : int;
-}
-function fin_money(n) { return n == null ? "—" : Number(n).toLocaleString("ru-RU", {maximumFractionDigits: 2}); }
-async function fin_call(path, method, data) {  /* как send, но отдаёт и код ответа: 409 — «заменить?» */
-  var r = await fetch(path, {method: method, headers: {"Content-Type": "application/json", Accept: "application/json"},
-                             body: data ? JSON.stringify(data) : undefined});
-  var b = null; try { b = await r.json(); } catch (e) { b = null; }
-  return {status: r.status, body: b};
-}
-function fin_err(b, status) {
-  var d = b && b.detail;
-  if (d && typeof d === "object") return esc(d.message || "") + (d.errors ? "<ul>" + d.errors.map(function (x) {
-    return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "");
-  return esc(d || ("сервер ответил " + status));
-}
-function fin_period() {
-  var y = Number($("#finYear").value), t = $("#finType").value;
-  if (!Number.isInteger(y) || y < FIN.st.year_min || y > FIN.st.year_max)
-    throw new Error("Год — целое число от " + FIN.st.year_min + " до " + FIN.st.year_max);
-  return {period_year: y, period_type: t};
-}
-async function fin_save(payload, msg) {
-  msg.className = "msg"; msg.textContent = "Сохраняем…";
-  var r = await fin_call("/finance/reserves", "POST", payload);
-  if (r.status === 409 && r.body && r.body.detail && r.body.detail.existing) {
-    var ex = r.body.detail.existing;
-    var ok = window.confirm(r.body.detail.message + "\n\nСейчас сохранено: итог " + fin_money(ex.total) + " сум, внёс " +
-      (ex.created_by || "—") + " " + String(ex.created_at || "").replace("T", " ").slice(0, 16) +
-      ".\nСтарая версия останется в истории.");
-    if (!ok) { msg.textContent = "Не сохранено: оставили прежний отчёт."; return false; }
-    payload.replace = true;
-    r = await fin_call("/finance/reserves", "POST", payload);
-  }
-  if (r.status !== 200) { msg.className = "msg bad"; msg.innerHTML = "Не сохранилось: " + fin_err(r.body, r.status); return false; }
-  msg.textContent = "Сохранено. Итог резервов: " + fin_money(r.body.total) + " сум" + (r.body.replaced ? " (прежняя версия — в истории)." : ".");
-  fin_list();
-  return true;
-}
-async function fin_reserves(box) {
-  try { FIN.st = await api("/finance/reserves/structure"); } catch (e) { box.innerHTML = fail(e); return; }
-  var st = FIN.st, y = new Date().getFullYear();
-  var rows = [];
-  st.kinds.forEach(function (k) {
-    k.groups.forEach(function (g, i) {
-      rows.push("<tr><td>" + (i ? "" : "<b>" + esc(k.label) + '</b><br><span class="hint">' + esc(k.norm) + "</span>") + "</td><td>" +
-        esc(g.code ? g.label : "—") + (g.hint ? '<br><span class="hint">' + esc(g.hint) + "</span>" : "") +
-        '</td><td><input class="fin-amt" inputmode="decimal" autocomplete="off" data-k="' + esc(k.code) + '" data-g="' +
-        esc(g.code) + '" aria-label="' + esc(k.label + " " + (g.code ? g.label : "")) + '" style="text-align:right;font-family:var(--mono)"></td></tr>');
-    });
-  });
-  box.innerHTML = '<div class="card"><h3>Страховые резервы</h3>' +
-    '<p class="note">Состав — по Положению 1882: РНП по учётным группам (п. 10), РЗУ, РПНУ, стабилизационные ОСГО / ОСГОР / ОСГОП, ' +
-    'резерв катастроф, прочие. РПМ компания не ведёт. Один отчёт на период; повторный ввод заменяет прежний, а прежний остаётся в истории. ' +
-    'Последний период берёт страница «Ёмкость и удержание».</p>' +
-    '<form class="f" id="finPer" onsubmit="return false"><label>Год<input id="finYear" type="number" inputmode="numeric" min="' + st.year_min +
-    '" max="' + st.year_max + '" step="1" value="' + y + '" required></label>' +
-    '<label>Период<select id="finType">' + st.periods.map(function (p) {
-      return '<option value="' + esc(p.code) + '">' + esc(p.label) + "</option>"; }).join("") + "</select></label></form>" +
-    '<div class="bar" style="margin-top:12px"><button class="btn btn-primary" type="button" id="finManual">Ввести вручную</button>' +
-    '<button class="btn btn-secondary" type="button" id="finUpload">Загрузить Excel</button>' +
-    '<a class="btn btn-secondary" href="/finance/reserves/template.xlsx" download>Скачать шаблон</a>' +
-    '<input type="file" id="finFile" accept=".xlsx,.xlsm" hidden></div>' +
-    '<div id="finWork"></div></div>' +
-    '<div class="card"><h3>Загруженные периоды</h3><div class="bar"><label style="flex-direction:row;align-items:center;gap:6px">' +
-    '<input type="checkbox" id="finHist" style="width:auto"> показать историю замен и удалений</label></div>' +
-    '<div id="finList"><p class="hint">Загружаем…</p></div><div id="finView"></div></div>';
-
-  $("#finManual").onclick = function () {
-    FIN.preview = null;
-    $("#finWork").innerHTML = '<p class="hint" style="margin-top:12px">Суммы в сумах; пустое поле — резерв не заполнен.</p>' +
-      tbl(["Вид резерва", "Учётная группа / вид", "Сумма, сум"], rows) +
-      '<form class="f" style="margin-top:10px" onsubmit="return false"><label>' + esc(st.base_label) +
-      '<input class="fin-amt" id="finBase" inputmode="decimal" autocomplete="off" style="text-align:right;font-family:var(--mono)"></label></form>' +
-      '<div class="tiles" style="margin-top:10px"><div class="tile"><b id="finTotal">0</b><span>итого резервов, сум</span></div></div>' +
-      '<div class="actions"><button class="btn btn-primary" type="button" id="finSave">Сохранить</button></div><div class="msg" id="finMsg"></div>';
-    var recount = function () {
-      var t = 0, bad = false;
-      document.querySelectorAll("#finWork .fin-amt[data-k]").forEach(function (i) {
-        var v = fin_parse(i.value); if (v == null) return; if (isNaN(v)) bad = true; else t += v; });
-      $("#finTotal").textContent = bad ? "ошибка" : fin_money(t);
-    };
-    /* разделители ставим при выходе из поля, чтобы курсор не прыгал во время набора */
-    $("#finWork").oninput = function (e) { if (e.target.classList.contains("fin-amt")) recount(); };
-    $("#finWork").addEventListener("focusout", function (e) { if (e.target.classList.contains("fin-amt")) fin_fmt(e.target); });
-    $("#finSave").onclick = async function () {
-      var msg = $("#finMsg"), lines = [], bad = [];
-      try {
-        var per = fin_period();
-        document.querySelectorAll("#finWork .fin-amt[data-k]").forEach(function (i) {
-          var v = fin_parse(i.value); if (v == null) return;
-          if (isNaN(v)) bad.push(i.getAttribute("aria-label"));
-          lines.push({reserve_code: i.dataset.k, group_code: i.dataset.g, amount: v});
-        });
-        var base = fin_parse($("#finBase").value);
-        if (bad.length || (base != null && isNaN(base))) throw new Error("не число в полях: " + bad.concat(isNaN(base) ? [st.base_label] : []).join("; "));
-        if (!lines.length) throw new Error("не введено ни одной суммы");
-        if (await fin_save(Object.assign(per, {lines: lines, base_premium_12m: base, source: "вручную"}), msg)) {
-          document.querySelectorAll("#finWork .fin-amt").forEach(function (i) { i.value = ""; }); recount();
-        }
-      } catch (err) { msg.className = "msg bad"; msg.textContent = "Не сохранилось: " + err.message; }
-    };
-  };
-
-  $("#finUpload").onclick = function () { $("#finFile").value = ""; $("#finFile").click(); };
-  $("#finFile").onchange = async function () {
-    var f = this.files[0], w = $("#finWork");
-    if (!f) return;
-    w.innerHTML = '<p class="hint" style="margin-top:12px">Разбираем файл «' + esc(f.name) + "»…</p>";
-    var fd = new FormData(); fd.append("file", f);
-    var r = await fetch("/finance/reserves/parse", {method: "POST", body: fd, headers: {Accept: "application/json"}});
-    var b = null; try { b = await r.json(); } catch (e) { b = null; }
-    if (!r.ok) { w.innerHTML = '<p class="flag" style="margin-top:12px;border-color:var(--stop);color:var(--stop)">Файл не принят: ' + fin_err(b, r.status) + "</p>"; return; }
-    FIN.preview = b;
-    var sums = FIN.st.kinds.map(function (k) { return '<div class="tile"><b>' + fin_money(b.by_kind[k.code]) + "</b><span>" + esc(k.label) + "</span></div>"; });
-    w.innerHTML = '<h3 style="margin-top:14px">Предпросмотр: ' + esc(b.file_name) + ' <span class="hint">(лист «' + esc(b.sheet) + '»)</span></h3>' +
-      '<p class="note">Пока ничего не сохранено. Проверьте, что распознано, и нажмите «Сохранить».</p>' +
-      (b.errors.length ? '<p class="flag" style="border-color:var(--stop);color:var(--stop)">Ошибки — сохранить нельзя, исправьте файл:<br>' +
-        b.errors.map(esc).join("<br>") + "</p>" : "") +
-      (b.warnings.length ? '<p class="flag">Предупреждения:<br>' + b.warnings.map(esc).join("<br>") + "</p>" : "") +
-      tbl(["Вид резерва", "Группа / вид", "Сумма, сум", "Строки файла"], b.lines.map(function (x) {
-        return "<tr><td>" + esc(x.label) + "</td><td>" + esc(x.group_label) + '</td><td class="n">' + fin_money(x.amount) +
-          "</td><td>" + esc(x.rows.join(", ")) + "</td></tr>"; }), "Ничего не распознано") +
-      '<div class="tiles" style="margin-top:10px"><div class="tile"><b>' + fin_money(b.total) + "</b><span>итого резервов, сум</span></div>" +
-      sums.join("") + '<div class="tile"><b>' + fin_money(b.base_premium_12m) + "</b><span>базовая премия за 12 мес.</span></div></div>" +
-      '<div class="actions"><button class="btn btn-primary" type="button" id="finSaveFile"' + (b.errors.length || !b.lines.length ? " disabled" : "") +
-      '>Сохранить</button><button class="btn btn-secondary" type="button" id="finCancel">Отменить</button></div><div class="msg" id="finMsg"></div>';
-    $("#finCancel").onclick = function () { FIN.preview = null; w.innerHTML = ""; };
-    $("#finSaveFile").onclick = async function () {
-      var msg = $("#finMsg");
-      try {
-        var p = FIN.preview, per = fin_period();
-        if (await fin_save(Object.assign(per, {source: "файл", file_name: p.file_name, base_premium_12m: p.base_premium_12m,
-            lines: p.lines.map(function (x) { return {reserve_code: x.reserve_code, group_code: x.group_code, amount: x.amount}; })}), msg))
-          $("#finSaveFile").disabled = true;
-      } catch (err) { msg.className = "msg bad"; msg.textContent = "Не сохранилось: " + err.message; }
-    };
-  };
-  $("#finHist").onchange = fin_list;
-  $("#finManual").onclick();
-  fin_list();
-}
-async function fin_list() {
-  var box = $("#finList"); if (!box) return;
-  try {
-    var d = await api("/finance/reserves" + ($("#finHist").checked ? "?history=1" : ""));
-    box.innerHTML = tbl(["Год", "Период", "Отчётная дата", "Итог, сум", "Источник", "Кто внёс", "Когда", "Состояние", ""],
-      d.items.map(function (p) {
-        var st = p.status === "действует" ? (p.id === d.latest_id ? '<span class="v ok">в расчёте ёмкости</span>' : '<span class="v dim">действует</span>')
-          : '<span class="v warn">' + esc(p.status) + "</span>";
-        return "<tr><td>" + esc(p.period_year) + "</td><td>" + esc(p.period_label) + "</td><td>" + esc(p.report_date) +
-          '</td><td class="n">' + fin_money(p.total) + "</td><td>" + esc(p.source) + (p.file_name ? '<br><span class="hint">' + esc(p.file_name) + "</span>" : "") +
-          "</td><td>" + esc(p.created_by || "—") + "</td><td>" + when(p.created_at) + "</td><td>" + st + "</td><td>" +
-          '<button class="btn btn-secondary btn-sm" type="button" data-fin-open="' + p.id + '">Открыть</button> ' +
-          (p.status === "действует" ? '<button class="btn btn-danger btn-sm" type="button" data-fin-del="' + p.id + '">Удалить</button>' : "") +
-          "</td></tr>"; }), "Отчётов о резервах пока нет");
-    box.onclick = async function (e) {
-      var o = e.target.closest("[data-fin-open]"), x = e.target.closest("[data-fin-del]");
-      if (o) return fin_view(o.dataset.finOpen);
-      if (!x) return;
-      var row = d.items.filter(function (p) { return String(p.id) === x.dataset.finDel; })[0];
-      if (!window.confirm("Удалить отчёт о резервах за " + row.period_label.toLowerCase() + " " + row.period_year +
-          " (итог " + fin_money(row.total) + " сум)?\nЗапись останется в истории и в журнале действий.")) return;
-      var r = await fin_call("/finance/reserves/" + row.id, "DELETE");
-      if (r.status !== 200) { window.alert("Не удалось удалить: " + (r.body && r.body.detail || r.status)); return; }
-      $("#finView").innerHTML = ""; fin_list();
-    };
-  } catch (e) { box.innerHTML = fail(e); }
-}
-async function fin_view(id) {
-  var v = $("#finView"); v.innerHTML = '<p class="hint">Загружаем…</p>';
-  try {
-    var p = await api("/finance/reserves/" + id);
-    v.innerHTML = '<h3 style="margin-top:14px">' + esc(p.period_label) + " " + esc(p.period_year) + " — на " + esc(p.report_date) +
-      ' <span class="v ' + (p.status === "действует" ? "ok" : "warn") + '">' + esc(p.status) + "</span></h3>" +
-      tbl(["Вид резерва", "Группа / вид", "Сумма, сум"], p.lines.map(function (x) {
-        return "<tr><td>" + esc(x.label) + "</td><td>" + esc(x.group_label) + '</td><td class="n">' + fin_money(x.amount) + "</td></tr>"; })) +
-      '<div class="kv" style="margin-top:10px"><span>Итого резервов</span><div>' + fin_money(p.total) + " сум</div>" +
-      "<span>Базовая премия за 12 мес.</span><div>" + fin_money(p.base_premium_12m) + "</div>" +
-      "<span>Источник</span><div>" + esc(p.source) + (p.file_name ? " — " + esc(p.file_name) : "") + "</div>" +
-      "<span>Внёс</span><div>" + esc(p.created_by || "—") + ", " + when(p.created_at) + "</div>" +
-      (p.closed_at ? "<span>" + (p.status === "заменён" ? "Заменил" : "Удалил") + "</span><div>" + esc(p.closed_by || "—") + ", " + when(p.closed_at) + "</div>" : "") +
-      "</div>" + (p.history.length > 1 ? '<p class="note" style="margin-top:10px">Версии этого периода:</p>' +
-      tbl(["Версия", "Итог, сум", "Источник", "Внёс", "Состояние"], p.history.map(function (h) {
-        return '<tr class="pick" data-fin-open="' + h.id + '"><td>№ ' + h.id + '</td><td class="n">' + fin_money(h.total) + "</td><td>" + esc(h.source) +
-          "</td><td>" + esc(h.created_by || "—") + ", " + when(h.created_at) + "</td><td>" + esc(h.status) + "</td></tr>"; })) : "");
-    v.onclick = function (e) { var o = e.target.closest("[data-fin-open]"); if (o) fin_view(o.dataset.finOpen); };
-  } catch (e) { v.innerHTML = fail(e); }
-}
-
-/* --- Знания и законы --- */
-V.knowledge_lawfeed = function (el) { el.innerHTML = frame("/law-feed", "Законодательство"); };
-V.knowledge_graph = function (el) { el.innerHTML = frame("/graph", "Паутина знаний"); };
-V.knowledge_acts = async function (el) {
-  var d = await api("/watched-acts"), s = d.status || {};
-  el.innerHTML = '<div class="tiles"><div class="tile"><b>' + esc(d.count) + '</b><span>актов под наблюдением</span></div>' +
-    '<div class="tile"><b>' + when(s.last) + '</b><span>последняя сверка</span></div>' +
-    '<div class="tile"><b>' + esc(s.changed_acts) + '</b><span>изменившихся актов</span></div>' +
-    '<div class="tile"><b>' + esc(s.unseen_events) + '</b><span>непросмотренных событий</span></div></div>' +
-    (s.error ? '<p class="flag">Ошибка сверки: ' + esc(s.error) + "</p>" : "") +
-    '<div class="card"><h3>Отслеживаемые акты</h3><p class="note">Расписание: ' + esc(s.schedule) + "</p>" +
-    tbl(["Код", "Акт", "Проверен", "Изменился"], (d.items || []).map(function (x) {
-      return '<tr><td style="font-family:var(--mono);font-size:11.5px">' + esc(x.code) + "</td><td>" +
-        (x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + "</a>" : esc(x.title)) +
-        "</td><td>" + when(x.checked_at || x.last_checked) + "</td><td>" +
-        (x.changed ? '<span class="v warn">да</span>' : '<span class="v dim">нет</span>') + "</td></tr>"; }), "Актов нет") + "</div>";
-};
-V.knowledge_topics = async function (el) {
-  var t = await api("/knowledge/topics"), l = await api("/knowledge/log");
-  el.innerHTML = '<div class="tiles"><div class="tile"><b>' + esc(t.count) + '</b><span>тем в реестре</span></div>' +
-    '<div class="tile"><b>' + esc(t.gaps_total) + '</b><span>пробелов</span></div>' +
-    '<div class="tile"><b>' + esc(l.minutes_total) + '</b><span>минут занятий</span></div></div>' +
-    '<div class="card"><h3>Темы</h3><p class="note">Области: ' + esc((t.areas || []).join(", ")) + "</p>" +
-    tbl(["Тема", "Область", "Состояние"], (t.items || []).map(function (x) {
-      return "<tr><td>" + esc(x.topic) + "</td><td>" + esc(x.area) + "</td><td>" + esc(x.status || x.state || "") + "</td></tr>"; }), "Тем нет") + "</div>" +
-    '<div class="card"><h3>Журнал занятий</h3>' +
-    tbl(["Когда", "Кто", "Что изучено", "Минут"], (l.items || []).map(function (x) {
-      return "<tr><td>" + when(x.ts) + "</td><td>" + esc(x.agent) + "</td><td>" + esc(x.what) + '</td><td class="n">' +
-        esc(x.minutes) + "</td></tr>"; }), "Записей нет") + "</div>";
-};
-V.knowledge_library = async function (el) {
-  var rows = await api("/office/shelves"), by = {};
-  rows.forEach(function (r) { (by[r.group] = by[r.group] || []).push(r); });
-  el.innerHTML = '<p class="hint">Документы компании и нормативные тексты, разложенные по полкам.</p><div class="cols">' +
-    Object.keys(by).map(function (g) {
-      return '<div class="card"><h3>' + esc(g) + '</h3><p class="note">Документов: ' + by[g].length + "</p>" +
-        tbl(["Название"], by[g].map(function (r) { return "<tr><td>" + esc(r.name) + "</td></tr>"; })) + "</div>";
-    }).join("") + "</div>";
-};
-
-/* --- Команда --- */
-V.team_tasks = function (el) { el.innerHTML = frame("/tasks-page", "Задачи команде"); };
-V.team_reports = function (el) { el.innerHTML = frame("/reports-page", "Ежедневный доклад"); };
-V.team_office = function (el) { el.innerHTML = frame("/office", "Офис агентов"); };
-
-/* --- Система --- */
-V.system_deploy = function (el) { el.innerHTML = frame("/admin/deploy", "Запуск и обслуживание"); };
-V.system_ai = async function (el) {
-  var s = await api("/llm/status");
-  var kv = [["Провайдер", s.provider_name || s.provider], ["Модель", s.model || "—"], ["Ключ", s.key_mask || "не задан"],
-            ["Состояние", s.connected ? "подключён" : "не подключён"], ["Режим данных", s.pd_mode]];
-  el.innerHTML = '<div class="card"><h3>Искусственный интеллект</h3>' +
-    '<p class="note">ИИ объясняет расчёт клиенту и дочитывает поля документов, которые не нашлись правилами. ' +
-    'Без ключа система работает полностью — просто без этих подсказок. ФИО, ПИНФЛ, паспорт и телефон заменяются ' +
-    'на метки до отправки.</p><div class="kv">' +
-    kv.map(function (p) { return "<span>" + esc(p[0]) + "</span><div>" + esc(p[1]) + "</div>"; }).join("") + "</div>" +
-    '<div class="bar" style="margin-top:12px"><button class="btn btn-primary" id="ping">Проверить связь с моделью</button>' +
-    '<a class="btn btn-link" href="/admin/deploy" target="_blank" rel="noopener">Ключи и настройки</a></div>' +
-    '<div class="msg" id="aiMsg">' + esc(s.reason || "") + "</div></div>" +
-    '<div class="card"><h3>Последние обращения</h3><div id="aiCalls">Загружаем…</div></div>';
-  $("#ping").onclick = async function () {
-    var m = $("#aiMsg"); m.className = "msg"; m.textContent = "Проверяем…";
-    try { var r = await send("/llm/ping", "POST", {}); m.textContent = (r.ok ? "Связь есть. " : "Не получилось. ") + (r.reason || ""); }
-    catch (e) { m.className = "msg bad"; m.textContent = "Не получилось: " + e.message; }
-  };
-  try {
-    var c = await api("/llm/calls?limit=15");
-    $("#aiCalls").innerHTML = tbl(["Когда", "Зачем", "Модель", "Токенов", "мс", "Итог"], c.map(function (x) {
-      return "<tr><td>" + when(x.ts) + "</td><td>" + esc(x.purpose) + "</td><td>" + esc(x.model) + '</td><td class="n">' +
-        esc(x.total_tokens == null ? "—" : x.total_tokens) + '</td><td class="n">' + esc(x.ms == null ? "—" : x.ms) +
-        "</td><td>" + (x.ok ? "успех" : esc(x.error || "ошибка")) + "</td></tr>"; }), "Обращений пока не было");
-  } catch (e) { $("#aiCalls").innerHTML = fail(e); }
-};
-V.system_data = async function (el) {
-  var h = await api("/health"), d = h.data_sources || {};
-  el.innerHTML = '<div class="card"><h3>Источники данных</h3><p class="note">Данные обновляются сами по расписанию. ' +
-    'Ошибка — только её тип; подробности в журнале сервера.</p>' +
-    tbl(["Источник", "Обновлено", "Следующий запуск", "Расписание", "Последняя ошибка"], Object.keys(d).map(function (k) {
-      var x = d[k] || {};
-      var nx = x.next && /^\d{4}-/.test(x.next) ? when(x.next) : esc(x.next || "—");
-      return "<tr><td>" + esc(x.title || k) + "</td><td>" + (x.last ? when(x.last) : "—") + "</td><td>" + nx +
-        "</td><td>" + esc(x.schedule || "—") + "</td><td>" + (x.error ? esc(x.error) + (x.error_at ? " · " + when(x.error_at) : "") : "—") +
-        "</td></tr>"; }), "Нет данных") +
-    '<div class="bar" style="margin-top:12px"><button class="btn btn-primary" id="mkRebuild">Пересобрать знания о рынке</button>' +
-    '<button class="btn" id="cmpRefresh">Проверить сайты конкурентов</button></div><div class="msg" id="dsMsg"></div></div>';
-  function go(path, btn) {
-    btn.onclick = async function () {
-      var m = $("#dsMsg"); m.className = "msg"; m.textContent = "Запускаем…";
-      try { var r = await send(path, "POST", {}); m.textContent = r.note || (r.started ? "Запущено." : "Уже идёт."); }
-      catch (e) { m.className = "msg bad"; m.textContent = "Не получилось: " + e.message; }
-    };
-  }
-  go("/market/knowledge/rebuild", $("#mkRebuild"));
-  go("/market/competitors/refresh", $("#cmpRefresh"));
-};
-V.system_bot = async function (el) {
-  var b = await api("/tg/bot-status");
-  el.innerHTML = '<div class="card"><h3>Бот Telegram</h3><p class="note">Через бота сотрудники входят в мини-приложение ' +
-    'и получают уведомления.</p><div class="kv">' + Object.keys(b).map(function (k) {
-      var v = b[k]; if (v === true) v = "да"; if (v === false) v = "нет"; if (v === null) v = "—";
-      return "<span>" + esc(k) + "</span><div>" + esc(typeof v === "object" ? JSON.stringify(v) : v) + "</div>";
-    }).join("") + "</div></div>";
-};
-V.system_google = async function (el) {
-  var g = await api("/auth/google/status");
-  el.innerHTML = '<div class="card"><h3>Вход через Google</h3><div class="kv">' +
-    "<span>Настроен</span><div>" + (g.configured ? "да" : "нет") + "</div>" +
-    "<span>Сообщение</span><div>" + esc(g.message || "") + "</div>" +
-    "<span>Домены</span><div>" + esc(g.domains || "любой аккаунт Google") + "</div></div>" +
-    (g.hint ? '<p class="note" style="margin-top:10px">' + esc(g.hint) + "</p>" : "") + "</div>";
-};
-V.system_langs = async function (el) {
-  var l = await api("/i18n/langs");
-  el.innerHTML = '<div class="card"><h3>Языки интерфейса</h3><p class="note">По умолчанию: ' + esc(l["default"]) +
-    ". Выбор человека хранится в cookie «" + esc(l.cookie) + "».</p>" +
-    tbl(["Код", "Язык"], (l.langs || []).map(function (x) {
-      return "<tr><td>" + esc(x.code) + "</td><td>" + esc(x.name) + "</td></tr>"; })) + "</div>";
-};
-V.system_audit = async function (el) {
-  var a = await api("/audit?limit=100");
-  el.innerHTML = '<div class="card"><h3>Журнал действий</h3><p class="note">Последние сто записей. ' +
-    'ФИО и телефоны в журнал не попадают — только логин и событие.</p>' +
-    tbl(["Когда", "Кто", "Действие", "Объект", "Детали"], a.map(function (x) {
-      return "<tr><td>" + when(x.ts) + "</td><td>" + esc(x.who) + "</td><td>" + esc(x.action) + "</td><td>" + esc(x.entity) +
-        '</td><td style="font-family:var(--mono);font-size:11.5px">' + esc(String(x.detail || "").slice(0, 120)) + "</td></tr>"; })) + "</div>";
-};
-
-/* --------------------------------------------------------------- формы */
-function bind_forms(el) {
-  el.querySelectorAll("form.f[data-url]").forEach(function (f) {
-    f.onsubmit = async function (e) {
-      e.preventDefault();
-      var d = {}, msg = f.nextElementSibling;
-      new FormData(f).forEach(function (v, k) {
-        if (v === "") return;
-        d[k] = (isNaN(v) || k.slice(-4) === "code" || k === "name" || k === "classes") ? v : Number(v);
-      });
-      if (d.classes) d.classes = String(d.classes).split(",").map(function (s) { return s.trim(); });
-      msg.className = "msg"; msg.textContent = "Сохраняем…";
-      try {
-        var j = await send(f.dataset.url, f.dataset.m, d);
-        msg.textContent = "Сохранено." + (j && j.id ? " ID: " + j.id : "");
-        f.reset();
-      } catch (err) { msg.className = "msg bad"; msg.textContent = "Не сохранилось: " + err.message; }
-    };
-  });
-}
-
-/* =====================================================================================================
-   Четыре пункта записки заказчика (06.10.2026). Прежние разделы выше (V.*) живут в «Дополнительно».
-   ===================================================================================================== */
+var V = {};
 var ICON = {
   staff: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.7.7 2.8 2.4 3 5.2"/></svg>',
   products: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/></svg>',
   claims: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
-  more: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>',
   exit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>',
-  chev: '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
   del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>'
 };
+/* меню — как в записке заказчика: Сотрудники, Продукты, Страховые случаи, Выход */
 var MAIN = [
-  {id: "staff", title: "Сотрудники", icon: ICON.staff,
-   why: "Заведите сотрудника: он сразу сможет войти по логину и временному паролю, а при первом входе задаст свой пароль."},
-  {id: "products", title: "Продукты", icon: ICON.products,
-   why: "Новый страховой продукт вручную или списком из Excel. Ниже — все продукты справочника."},
-  {id: "claims", title: "Страховые случаи", icon: ICON.claims,
-   why: "Число страховых случаев и сумма выплат по каждому продукту за три года — вручную или файлом Excel. Это исходные данные для калибровки ставок."}
+  {id: "staff", title: "Сотрудники", icon: ICON.staff},
+  {id: "products", title: "Продукты", icon: ICON.products},
+  {id: "claims", title: "Страховые случаи", icon: ICON.claims}
 ];
-function today_iso() { return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
-function err_text(e) { return esc(e && e.message ? e.message : e); }
 
-/* ---------- 1. Сотрудники ---------- */
-var STAFF = {d: null, q: ""};
-/* порядок полей — как в записке заказчика: Ф.И.О.; Должность; Департамент / Отдел / Филиал; Логин / Пароль; Телефон */
-var STAFF_FORM = [
-  ["Кто", [["full_name", "Ф.И.О.", true, "Иванов Иван Иванович"], ["position", "Должность", true, "андеррайтер"]]],
-  ["Где работает", [["department", "Департамент", true, "андеррайтинг"], ["unit", "Отдел", false, "имущество"],
-                    ["branch", "Филиал", false, "Ташкент"]]],
-  ["Вход", [["login", "Логин", true, "i.ivanov"], ["temp_password", "Пароль", false, "пусто — придумает система"],
-            ["phone", "Телефон", true, "+998 90 123 45 67"]]]
-];
-function staff_field(f, u) {
+/* ---------- 1. Сотрудники (app/staff.py: POST /tg/users/manual, PUT /tg/users/{id}, POST …/reset-password) ---------- */
+var STAFF = {d: null};
+var STAFF_COLS = [["full_name", "Ф.И.О.", true, "Иванов Иван Иванович"], ["position", "Должность", true, "андеррайтер"],
+  ["department", "Департамент", true, "андеррайтинг"], ["unit", "Отдел", false, "имущество"], ["branch", "Филиал", false, "Ташкент"],
+  ["login", "Логин", true, "i.ivanov"], ["temp_password", "Пароль", false, "пусто — придумает система"],
+  ["phone", "Телефон", true, "+998 90 123 45 67"]];
+var STAFF_EDIT = ["full_name", "position", "department", "unit", "branch", "phone"];
+function staff_input(f, u) {
   var k = f[0], v = u ? (u[k] || "") : (k === "phone" ? "+998 " : "");
-  var extra = k === "phone" ? ' type="tel" inputmode="tel"' : k === "login" ? ' autocapitalize="off" spellcheck="false"' +
-    (u ? " readonly" : "") : k === "temp_password" ? ' autocomplete="new-password"' : "";
-  return "<label><span>" + f[1] + (f[2] || k === "temp_password" ? "" : " <small>(необязательно)</small>") +
-    (k === "temp_password" ? " <small>(временный)</small>" : "") + "</span>" +
-    '<input name="' + k + '" value="' + esc(v) + '"' + (f[2] && !(u && k === "login") ? " required" : "") + extra +
+  var extra = k === "phone" ? ' type="tel" inputmode="tel"' : k === "login" ? ' autocapitalize="off" spellcheck="false"' :
+    k === "temp_password" ? ' autocomplete="new-password"' : "";
+  return "<label>" + f[1] + '<input name="' + k + '" value="' + esc(v) + '"' + (f[2] ? " required" : "") + extra +
     ' placeholder="' + esc(f[3]) + '" autocomplete="off"></label>';
 }
-function staff_form_html(u) {
-  return STAFF_FORM.map(function (g) {
-    var fs = g[1].filter(function (f) { return !(u && (f[0] === "login" || f[0] === "temp_password")); });
-    return '<div class="row' + (u && g[0] === "Вход" ? 3 : fs.length) + '">' + fs.map(function (f) { return staff_field(f, u); }).join("") + "</div>";
-  }).join("");
+function staff_secret(login, pw) {
+  return '<div class="secret" role="status"><div><div class="hint" style="margin:0">Временный пароль · логин <b>' + esc(login) +
+    "</b></div><code>" + esc(pw) + "</code></div>" +
+    '<button class="btn btn-secondary btn-sm" type="button" data-copy="' + esc(pw) + '">Скопировать</button>' +
+    '<p class="flag" style="flex-basis:100%;margin:0">Пароль показан один раз — передайте его сотруднику лично.</p></div>';
 }
-function staff_where(u) {
-  return [u.department, u.unit, u.branch].filter(Boolean).map(esc).join(" / ") || "—";
-}
-function staff_rows() {
-  var q = STAFF.q.toLowerCase();
-  var items = (STAFF.d.items || []).filter(function (u) {
-    return !q || [u.full_name, u.position, u.department, u.unit, u.branch, u.login, u.phone].join(" ").toLowerCase().indexOf(q) >= 0;
-  });
-  $("#sCount").textContent = items.length === STAFF.d.items.length ? "всего " + items.length : "найдено " + items.length + " из " + STAFF.d.items.length;
-  return items.map(function (u) {
-    var temp = u.must_change_password ? ' <span class="v warn" title="Сотрудник ещё не сменил временный пароль">временный пароль</span>' : "";
-    var off = u.status && u.status !== "активен" ? ' <span class="v dim">' + esc(u.status) + "</span>" : "";
-    return "<tr><td>" + esc(u.full_name || "—") + off + "</td><td>" + esc(u.position || "—") + "</td><td>" + staff_where(u) +
-      "</td><td>" + esc(u.login) + temp + '</td><td class="nw">' + esc(u.phone || "—") + '</td><td class="ctl">' +
-      (STAFF.d.can_manage ? '<button class="btn btn-secondary btn-sm" type="button" data-sedit="' + u.id + '">Изменить</button>' +
-        '<button class="btn btn-secondary btn-sm" type="button" data-sreset="' + u.id + '">Сбросить пароль</button>' : "—") +
-      "</td></tr>";
-  });
+function copy_text(t, btn) {
+  var done = function () { btn.textContent = "Скопировано"; };
+  var by_hand = function () {
+    var a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select();
+    try { document.execCommand("copy"); done(); } catch (e) { btn.textContent = "Скопируйте вручную"; }
+    a.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, by_hand);
+  else by_hand();
 }
 function staff_table() {
   var b = $("#sTable"); if (!b) return;
-  b.innerHTML = tbl(["Ф.И.О.", "Должность", "Департамент / Отдел / Филиал", "Логин", "Телефон", ""], staff_rows(),
-    STAFF.q ? "Никого не нашли — измените поиск" : "Сотрудников пока нет");
+  var cols = ["full_name", "position", "department", "unit", "branch", "login", "phone"];
+  b.innerHTML = tbl(["Ф.И.О.", "Должность", "Департамент", "Отдел", "Филиал", "Логин", "Телефон", ""],
+    (STAFF.d.items || []).map(function (u) {
+      return "<tr>" + cols.map(function (k) { return "<td" + (k === "phone" || k === "login" ? ' class="nw"' : "") + ">" + esc(u[k] || "—") + "</td>"; }).join("") +
+        '<td class="ctl">' + (STAFF.d.can_manage ? '<button class="btn btn-secondary btn-sm" type="button" data-sedit="' + u.id + '">Изменить</button>' +
+          '<button class="btn btn-secondary btn-sm" type="button" data-sreset="' + u.id + '" title="Сбросить пароль" aria-label="Сбросить пароль">Пароль</button>' : "") + "</td></tr>";
+    }), "Сотрудников пока нет", "tall");
 }
 async function staff_reload(note) {
   try { STAFF.d = await api("/tg/users"); } catch (e) { $("#sTable").innerHTML = fail(e); return; }
   $("#sOut").innerHTML = note || "";
   staff_table();
 }
-V.main_staff = async function (el) {
+V.staff = async function (el) {
   STAFF.d = await api("/tg/users");
-  el.innerHTML = (STAFF.d.can_manage ? '<div class="card"><h3>Добавить сотрудника</h3>' +
-    '<p class="note">Сотрудник получает роль «сотрудник» и входит сразу. Пароль можно не задавать — система придумает его и покажет один раз.</p>' +
-    '<form class="form" id="sAdd" autocomplete="off">' + staff_form_html(null) +
+  el.innerHTML = (STAFF.d.can_manage ? '<div class="card"><form class="form" id="sAdd" autocomplete="off"><div class="grid4">' +
+    STAFF_COLS.map(function (f) { return staff_input(f, null); }).join("") + "</div>" +
     '<button class="btn btn-primary go" type="submit">Добавить</button></form>' +
     '<div class="msg" id="sAddMsg" role="status"></div><div id="sSecret"></div></div>'
-    : '<p class="flag">Заводить сотрудников может только администратор. Список ниже — только для чтения.</p>') +
-    '<div class="card"><div class="tbl-head"><div><h3>Сотрудники</h3><span class="count" id="sCount"></span></div>' +
-    '<label>Поиск<input id="sQ" placeholder="имя, логин, отдел или телефон" value="' + esc(STAFF.q) + '"></label></div>' +
-    '<div id="sOut"></div><div id="sTable"></div><div class="msg" id="sMsg" role="status"></div></div>';
+    : '<p class="flag">Добавлять сотрудников может только администратор.</p>') +
+    '<div class="card"><div id="sOut"></div><div id="sTable"></div><div class="msg" id="sMsg" role="status"></div></div>';
   staff_table();
-  /* поиск перерисовывает только таблицу — поле ввода и курсор остаются на месте */
-  $("#sQ").oninput = function (e) { STAFF.q = e.target.value || ""; staff_table(); };
   var add = $("#sAdd");
   if (add) add.onsubmit = async function (e) {
     e.preventDefault();
     var m = $("#sAddMsg"), body = {};
     new FormData(add).forEach(function (v, k) { body[k] = String(v).trim(); });
-    m.className = "msg"; m.textContent = "Заводим сотрудника…"; $("#sSecret").innerHTML = "";
+    m.className = "msg"; m.textContent = "Добавляем…"; $("#sSecret").innerHTML = "";
     try {
       var r = await send("/tg/users/manual", "POST", body);
       add.reset(); add.elements["phone"].value = "+998 ";
       m.className = "msg good";
-      m.textContent = "Сотрудник «" + (r.user.full_name || r.user.login) + "» добавлен." +
-        (r.temp_password ? "" : " Пароль вы задали сами — передайте его сотруднику лично.");
-      if (r.temp_password) $("#sSecret").innerHTML = staff_secret(r.user.login, r.temp_password, "Временный пароль для " + (r.user.full_name || r.user.login));
+      m.textContent = "Сотрудник «" + (r.user.full_name || r.user.login) + "» добавлен.";
+      if (r.temp_password) $("#sSecret").innerHTML = staff_secret(r.user.login, r.temp_password);
       staff_reload();
     } catch (err) { m.className = "msg bad"; m.textContent = "Сотрудник не добавлен: " + err.message + "."; }
   };
@@ -1804,371 +365,332 @@ V.main_staff = async function (el) {
     if (b.dataset.sedit) {
       var was = el.querySelector("tr.edit"); if (was) was.remove();
       var tr = document.createElement("tr"); tr.className = "edit";
-      tr.innerHTML = '<td colspan="6"><b>Изменить: ' + esc(u.full_name || u.login) + '</b><form class="form" style="margin-top:12px" autocomplete="off">' +
-        staff_form_html(u) + '<div class="actions left"><button class="btn btn-primary" type="submit">Сохранить изменения</button>' +
+      tr.innerHTML = '<td colspan="8"><form class="form" autocomplete="off"><div class="grid3">' +
+        STAFF_COLS.filter(function (f) { return STAFF_EDIT.indexOf(f[0]) >= 0; }).map(function (f) { return staff_input(f, u); }).join("") +
+        '</div><div class="actions left"><button class="btn btn-primary" type="submit">Сохранить</button>' +
         '<button class="btn btn-secondary" type="button" data-scancel="1">Отменить</button></div></form><div class="msg" role="status"></div></td>';
       b.closest("tr").after(tr);
       tr.querySelector("input").focus();
       tr.querySelector("form").onsubmit = async function (ev) {
         ev.preventDefault();
         var f = ev.target, em = tr.querySelector(".msg"), diff = {};
-        ["full_name", "position", "department", "unit", "branch", "phone"].forEach(function (k) {
+        STAFF_EDIT.forEach(function (k) {
           var v = f.elements[k].value.trim();
           if (v !== String(u[k] || "")) diff[k] = v;
         });
-        if (!Object.keys(diff).length) { em.className = "msg"; em.textContent = "Ничего не изменилось — сохранять нечего."; return; }
+        if (!Object.keys(diff).length) { em.className = "msg"; em.textContent = "Ничего не изменилось."; return; }
         em.className = "msg"; em.textContent = "Сохраняем…";
         try {
           var r = await send("/tg/users/" + id, "PUT", diff);
-          staff_reload('<p class="msg good">Карточка «' + esc(r.user.full_name || r.user.login) + "» сохранена" +
-            (r.changed && r.changed.length ? ": изменено — " + esc(r.changed.map(function (k) { return STAFF_NAMES[k] || k; }).join(", ")) : "") + ".</p>");
+          staff_reload('<p class="msg good">Сохранено: «' + esc(r.user.full_name || r.user.login) + "».</p>");
         } catch (err) { em.className = "msg bad"; em.textContent = "Не сохранилось: " + err.message + "."; }
       };
       return;
     }
-    if (!confirm("Сбросить пароль сотруднику «" + (u.full_name || u.login) + "»?\n\nТекущий пароль перестанет действовать. " +
-                 "Система выдаст временный пароль — передайте его сотруднику лично.")) return;
+    if (!confirm("Сбросить пароль сотруднику «" + (u.full_name || u.login) + "»? Текущий пароль перестанет действовать.")) return;
     m.className = "msg"; m.textContent = "Сбрасываем пароль…";
     try {
       var r = await send("/tg/users/" + id + "/reset-password", "POST", {});
       m.textContent = "";
-      staff_reload(staff_secret(r.login, r.temp_password, "Новый временный пароль для " + (u.full_name || r.login)));
+      staff_reload(staff_secret(r.login, r.temp_password));
     } catch (err) { m.className = "msg bad"; m.textContent = "Пароль не сброшен: " + err.message + "."; }
   };
 };
 
 /* ---------- 2. Продукты ---------- */
-/* Добавление — те же точки, что у прежней карточки «Новый продукт»: POST /admin/products (код, название, классы,
-   текст тарифа «0,05%»; продукт создаётся в статусе «тест»), затем минимальная ставка и тип ставки — новой версией
-   PUT /reference/min-rates/{код} с сегодняшней датой (app/min_rates.py). Тип ставки хранится вместе с минимумом. */
-var PRD = {items: [], q: ""};
+/* POST /admin/products (код, название, тариф «0,15%»; новый продукт — в статусе «тест»). Классы форма не задаёт:
+   у нового продукта список пуст, у существующего кода сохраняется прежний. Минимальная ставка и тип ставки
+   (необязательно) — новой версией PUT /reference/min-rates/{код} с сегодняшней датой (app/min_rates.py). */
+var PRD = {items: []};
 var PRD_TYPE = {annual: "годовая", fixed: "фиксированная"};
-function prd_num(s) {
-  s = String(s == null ? "" : s).replace(/[\s  ]/g, "").replace(",", ".");
-  return s === "" ? null : (/^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN);
-}
-function prd_pct(n) { return n == null ? "—" : String(Number(n)).replace(".", ",") + "%"; }
 async function prd_load() {
-  var rows = await api("/reference/products"), mr = {};
-  try { (await api("/reference/min-rates")).items.forEach(function (x) { mr[x.code] = x; }); } catch (e) { mr = {}; }
-  PRD.items = rows.map(function (p) {
-    var m = mr[p.code] || {};
-    return {code: p.code, name: p.name, classes: p.classes || "", rate: p.rate_text || "", status: p.status || "",
-            min: m.min_rate_pct, type: m.min_rate_pct == null ? null : m.rate_type, statutory: m.editable === false};
+  PRD.items = (await api("/reference/products")).map(function (p) {
+    return {code: p.code, name: p.name, classes: p.classes || "", rate: p.rate_text || ""};
   });
 }
 function prd_table() {
   var box = $("#prdTable"); if (!box) return;
-  var q = PRD.q.toLowerCase();
-  var rows = PRD.items.filter(function (p) {
-    return !q || String(p.code).toLowerCase().indexOf(q) >= 0 || String(p.name || "").toLowerCase().indexOf(q) >= 0 ||
-      String(p.classes).split(",").indexOf(q) >= 0;
-  });
-  $("#prdCount").textContent = rows.length === PRD.items.length ? "всего " + rows.length : "найдено " + rows.length + " из " + PRD.items.length;
-  box.innerHTML = tbl(["Код", "Название", "Классы", 'Ставка', "Тип ставки", 'Минимум'],
-    rows.map(function (p) {
-      return "<tr><td class=\"nw\">" + esc(p.code) + "</td><td>" + esc(p.name) +
-        (p.status === "тест" ? ' <span class="v warn" title="Новый продукт: до утверждения виден только андеррайтеру">тест</span>' : "") +
-        "</td><td>" + esc(String(p.classes).split(",").join(", ") || "—") + '</td><td class="n">' + esc(p.rate || "—") + "</td><td>" +
-        (p.statutory ? '<span class="v dim">по нормативному акту</span>' : esc(p.type ? PRD_TYPE[p.type] || p.type : "—")) +
-        '</td><td class="n">' + (p.statutory ? "—" : prd_pct(p.min)) + "</td></tr>";
-    }), PRD.q ? "Продуктов не найдено — измените поиск" : "Продуктов пока нет", "tall");
+  box.innerHTML = tbl(["Код продукта", "Название", "Тариф"], PRD.items.map(function (p) {
+    return '<tr><td class="nw">' + esc(p.code) + "</td><td>" + esc(p.name) + '</td><td class="nw">' + esc(p.rate || "—") + "</td></tr>";
+  }), "Продуктов пока нет", "tall");
 }
-V.main_products = async function (el) {
+async function prd_refresh() { try { await prd_load(); prd_table(); } catch (e) { /* таблица остаётся прежней */ } }
+function prod_preview(b) {
+  var w = $("#pWork"), c = {create: 0, update: 0, skip: 0};
+  b.items.forEach(function (it) { if (!it.errors.length) c[it.action] = (c[it.action] || 0) + 1; });
+  var rows = b.items.map(function (it) {
+    return imp_row(it) + '<td class="n">' + esc(it.row) + "</td><td>" + esc(it.product_code || "—") + "</td><td>" + esc(it.name || "—") +
+      '</td><td class="n">' + (it.rate_pct == null ? "—" : pct(it.rate_pct)) + "</td><td>" + imp_act(it) +
+      '</td><td class="notes">' + imp_notes(it) + "</td></tr>";
+  });
+  w.innerHTML = "<h3>Файл" + (b.file_name ? " «" + esc(b.file_name) + "»" : "") + " — ещё не записан</h3>" +
+    imp_tiles([[c.create, "новых"], [c.update, "изменится"], [c.skip, "без изменений"],
+               [b.error_count, "с ошибками — пропустим", b.error_count ? "bad" : ""]]) +
+    tbl(["Строка", "Код", "Название", "Тариф", "Действие", "Замечания"], rows, "В файле нет строк с продуктами", "tall") +
+    '<div class="actions"><button class="btn btn-primary" type="button" id="pApply"' + (b.to_write ? "" : " disabled") +
+    ">Применить: записать " + esc(b.to_write || 0) + " стр.</button>" +
+    '<button class="btn btn-secondary" type="button" id="pCancel">Отменить</button></div><div class="msg" id="pMsg"></div>';
+  $("#pCancel").onclick = function () { w.innerHTML = ""; };
+  $("#pApply").onclick = async function () {
+    var m = $("#pMsg"), btn = this;
+    btn.disabled = true; m.className = "msg"; m.textContent = "Записываем…";
+    try {
+      var r = await send("/reference/products/import/apply", "POST", {token: b.token});
+      m.className = "msg good";
+      m.textContent = "Готово: добавлено " + r.created + ", изменено " + r.updated + ", пропущено " + r.skipped + ".";
+      $("#pCancel").textContent = "Закрыть";
+      prd_refresh();
+    } catch (e) {
+      btn.disabled = false; m.className = "msg bad";
+      m.textContent = "Не записано: " + e.message + ". Если прошло больше получаса — загрузите файл ещё раз.";
+    }
+  };
+}
+V.products = async function (el) {
   await prd_load();
-  el.innerHTML = '<div class="split"><div class="card"><h3>Добавить страховой продукт</h3>' +
-    '<p class="note">Новый продукт создаётся в статусе «тест»: до утверждения его видит только андеррайтер. Минимальная ставка и тип ' +
-    "ставки записываются версией с сегодняшней датой — прежние расчёты остаются на своих ставках.</p>" +
-    '<form class="form" id="prdAdd" autocomplete="off">' +
-    '<div class="row2"><label>Код продукта<input name="code" required placeholder="0836" spellcheck="false"></label>' +
-    '<label>Название<input name="name" required placeholder="Страхование имущества предприятий"></label></div>' +
-    '<div class="row3"><label>Тариф, ставка %<input name="rate" inputmode="decimal" placeholder="0,15"></label>' +
-    '<label>Тип ставки<select name="rate_type"><option value="annual">годовая</option><option value="fixed">фиксированная</option></select></label>' +
-    '<label>Минимальная ставка, %<input name="min" inputmode="decimal" placeholder="0,05"></label></div>' +
-    '<div class="row1"><label>Классы <small>через запятую, например 8, 13</small><input name="classes" required placeholder="8" spellcheck="false"></label></div>' +
+  el.innerHTML = '<div class="split"><div class="card"><form class="form" id="prdAdd" autocomplete="off">' +
+    '<div class="grid3"><label>Код продукта<input name="code" required placeholder="0836" spellcheck="false"></label>' +
+    '<label>Название<input name="name" required placeholder="Страхование имущества"></label>' +
+    '<label>Тариф, %<input name="rate" inputmode="decimal" placeholder="0,15"></label></div>' +
+    '<div class="grid2"><label>Минимальная ставка, % <small>(необязательно)</small><input name="min" inputmode="decimal" placeholder="0,05"></label>' +
+    '<label>Тип ставки <small>(необязательно)</small><select name="rate_type"><option value="annual">годовая</option>' +
+    '<option value="fixed">фиксированная</option></select></label></div>' +
     '<button class="btn btn-primary go" type="submit">Добавить</button></form><div class="msg" id="prdMsg" role="status"></div></div>' +
-    '<div class="card" id="pImp"><h3>Импорт из Excel</h3>' +
-    '<p class="note">Когда продуктов много: скачайте шаблон, заполните и загрузите. Сначала покажем, что изменится, — в справочник ' +
-    "запишем только после «Применить» и только строки без ошибок. Из справочника ничего не удаляется.</p>" +
+    '<div class="card"><h3>Импорт из Excel</h3>' +
     '<div class="bar"><a class="btn btn-secondary" href="/reference/products/template.xlsx" download>Скачать шаблон</a>' +
-    '<button class="btn btn-primary" type="button" id="pPick">Загрузить</button>' +
+    '<button class="btn btn-primary" type="button" id="pPick">Загрузить файл</button>' +
     '<input type="file" id="pFile" accept=".xlsx,.xlsm" hidden></div></div></div>' +
     '<div id="pWork" class="card"></div>' +
-    '<div class="card"><div class="tbl-head"><div><h3>Продукты</h3><span class="count" id="prdCount"></span></div>' +
-    '<label>Поиск<input id="prdQ" placeholder="код, название или класс" value="' + esc(PRD.q) + '"></label></div>' +
-    '<div id="prdTable"></div></div>';
+    '<div class="card"><div id="prdTable"></div></div>';
   prd_table();
-  $("#prdQ").oninput = function (e) { PRD.q = e.target.value.trim(); prd_table(); };
-  /* импорт: те же функции, что в прежней админке (prod_preview); после «Применить» prod_list зовёт PRODUCTS_CHANGED */
-  $("#pPick").onclick = function () { $("#pFile").value = ""; $("#pFile").click(); };
-  $("#pFile").onchange = async function () {
-    var f = this.files[0], w = $("#pWork");
-    if (!f) return;
-    w.innerHTML = '<p class="hint">Разбираем файл «' + esc(f.name) + "»…</p>";
-    try { prod_preview(await upload_xlsx("/reference/products/import", f)); }
-    catch (e) { w.innerHTML = '<p class="flag bad">Файл не принят: ' + err_text(e) + ". Проверьте, что это шаблон из кнопки «Скачать шаблон», и загрузите снова.</p>"; }
-  };
-  PRODUCTS_CHANGED = async function () { try { await prd_load(); prd_table(); } catch (e) { /* таблица останется прежней */ } };
+  pick_file($("#pPick"), $("#pFile"), $("#pWork"), "/reference/products/import", prod_preview);
   var add = $("#prdAdd");
   add.onsubmit = async function (e) {
     e.preventDefault();
     var m = $("#prdMsg"), f = add.elements;
-    var code = f.code.value.trim(), name = f.name.value.trim(), rate = prd_num(f.rate.value), min = prd_num(f.min.value);
-    var classes = f.classes.value.split(/[,;\s]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var code = f.code.value.trim(), name = f.name.value.trim(), rate = parse_num(f.rate.value), min = parse_num(f.min.value);
     var bad = [];
     if (!code) bad.push("укажите код продукта");
     if (!name) bad.push("укажите название");
-    if (!classes.length) bad.push("укажите хотя бы один класс");
     if (rate !== null && (isNaN(rate) || rate > 100)) bad.push("тариф — число от 0 до 100, например 0,15");
     if (min !== null && (isNaN(min) || min > 100)) bad.push("минимальная ставка — число от 0 до 100, например 0,05");
     m.className = "msg";
     if (bad.length) { m.className = "msg bad"; m.textContent = "Продукт не добавлен: " + bad.join("; ") + "."; return; }
     var same = PRD.items.filter(function (p) { return p.code === code; })[0];
-    if (same && !confirm("Продукт с кодом " + code + " уже есть: «" + same.name + "».\n\nЗаменить его название, классы и тариф? " +
-                         "Статус станет «тест».")) { m.textContent = "Не добавлено: продукт с таким кодом остался как был."; return; }
-    m.textContent = "Добавляем продукт…";
+    if (same && !confirm("Продукт с кодом " + code + " уже есть: «" + same.name + "». Заменить название и тариф?")) {
+      m.textContent = "Ничего не изменено."; return;
+    }
+    var classes = same && same.classes ? String(same.classes).split(",").map(function (s) { return s.trim(); }).filter(Boolean) : [];
+    m.textContent = "Добавляем…";
     try {
       await send("/admin/products", "POST", {code: code, name: name, classes: classes,
         rate_text: rate === null ? "" : String(rate).replace(".", ",") + "%"});
     } catch (err) { m.className = "msg bad"; m.textContent = "Продукт не добавлен: " + err.message + "."; return; }
-    var tail = "";
     if (min !== null) {
       try {
         await send("/reference/min-rates/" + encodeURIComponent(code), "PUT", {min_rate_pct: min, rate_type: f.rate_type.value,
           effective_from: today_iso(), note: "задано при добавлении продукта"});
-        tail = " Минимальная ставка " + prd_pct(min) + ", " + PRD_TYPE[f.rate_type.value] + ", действует с сегодняшнего дня.";
       } catch (err) {
         m.className = "msg bad";
-        m.textContent = "Продукт " + code + " добавлен, но минимальная ставка не записана: " + err.message +
-          ". Задайте её в «Дополнительно → Минимальные ставки страховщика».";
-        PRODUCTS_CHANGED(); return;
+        m.textContent = "Продукт " + code + " добавлен, но минимальная ставка не записана: " + err.message + ".";
+        prd_refresh(); return;
       }
-    } else if (f.rate_type.value === "fixed") {
-      tail = " Тип ставки не записан: он хранится вместе с минимальной ставкой — укажите её, когда она будет известна.";
     }
     m.className = "msg good";
-    m.textContent = "Продукт " + code + " «" + name + "» добавлен в статусе «тест»." + tail;
+    m.textContent = "Продукт " + code + " «" + name + "» добавлен.";
     add.reset();
-    PRD.q = code; $("#prdQ").value = code;
-    PRODUCTS_CHANGED();
+    prd_refresh();
   };
 };
 
 /* ---------- 3. Страховые случаи ---------- */
-/* Ручной ввод — итог года по продукту (число случаев и сумма выплат): GET/PUT /claims/yearly (app/claims_import.py).
-   Сервер раскладывает итог на строки claims — по одной на случай, — поэтому сводка и калибровка видят ровно
-   введённые число и сумму. Файл Excel — построчные дела (GET /claims/template.xlsx, POST /claims/import → apply). */
+/* Итог года по продукту (число случаев и сумма): GET/PUT /claims/yearly (app/claims_import.py).
+   Файл Excel — построчные дела: GET /claims/template.xlsx, POST /claims/import → /claims/import/apply. */
 var CY = {years: null, data: {}, products: null};
 function cy_default() { var y = new Date().getFullYear(); return [y - 3, y - 2, y - 1]; }
 function cy_name(code) {
   var p = (CY.products || []).filter(function (x) { return x.code === code; })[0];
   return p ? p.name : "";
 }
-function cy_row(y, r) {
+function cy_row(r) {
   r = r || {};
-  return '<tr data-y="' + y + '"><td><input data-f="code" list="cyProducts" value="' + esc(r.product_code || "") +
+  return '<tr><td><input data-f="code" list="cyProducts" value="' + esc(r.product_code || "") +
     '" placeholder="0807" spellcheck="false" aria-label="Код продукта" style="max-width:130px"></td>' +
     '<td class="pname" data-f="name">' + esc(r.product_name || cy_name(r.product_code || "") || "—") + "</td>" +
     '<td><input data-f="cases" inputmode="numeric" value="' + esc(r.cases == null ? "" : r.cases) +
-    '" aria-label="Число страховых случаев" style="max-width:150px;text-align:right;font-family:var(--mono)"></td>' +
-    '<td><input data-f="amount" class="fin-amt" inputmode="decimal" value="' + esc(r.amount == null ? "" : fin_money(r.amount)) +
+    '" aria-label="Число случаев" style="max-width:150px;text-align:right;font-family:var(--mono)"></td>' +
+    '<td><input data-f="amount" class="amt" inputmode="decimal" value="' + esc(fmt_money(r.amount)) +
     '" aria-label="Сумма, сум" style="text-align:right;font-family:var(--mono)"></td>' +
     '<td class="del"><button class="iconbtn" type="button" data-cydel="1" title="Убрать строку" aria-label="Убрать строку">' + ICON.del + "</button></td></tr>";
 }
-function cy_block(i) {
-  var y = CY.years[i], d = CY.data[y] || {manual: [], files: []};
-  var rows = d.manual.length ? d.manual : [{}];
-  var files = d.files || [];
-  var fc = files.reduce(function (a, x) { return a + x.cases; }, 0), fs = files.reduce(function (a, x) { return a + x.amount; }, 0);
-  return '<div class="tbl-head"><h3><span class="ytag">' + (i + 1) + '-й год</span>' + y + "</h3>" +
-    '<span class="count">' + (d.manual.length ? "введено продуктов: " + d.manual.length : "ручных данных пока нет") + "</span></div>" +
-    '<div class="scroll"><table><thead><tr><th>Код продукта</th><th>Название</th><th>Число страховых случаев</th>' +
-    '<th>Сумма, сум</th><th><span class="hint" style="margin:0">&nbsp;</span></th></tr></thead><tbody>' +
-    rows.map(function (r) { return cy_row(y, r); }).join("") + "</tbody></table></div>" +
-    '<div class="actions left"><button class="btn btn-secondary" type="button" data-cyadd="' + y + '">Добавить строку</button>' +
-    '<button class="btn btn-primary" type="button" data-cysave="' + y + '">Сохранить ' + y + " год</button></div>" +
-    '<div class="msg" data-cymsg="' + y + '" role="status"></div>' +
-    (files.length ? '<details class="files-sub"><summary>Ещё из загруженных файлов за ' + y + " год: " + num(fc) + " случ. на " + money(fs) +
-      "</summary>" + tbl(["Код", "Название", 'Случаев', 'Сумма'], files.map(function (x) {
-        return "<tr><td>" + esc(x.product_code) + "</td><td>" + esc(x.product_name || "—") + '</td><td class="n">' + num(x.cases) +
-          '</td><td class="n">' + money(x.amount) + "</td></tr>"; })) +
-      '<p class="hint" style="margin-top:8px">Это построчные дела из Excel. Ручной ввод выше их не заменяет — в сводке они складываются.</p></details>' : "");
+function cy_years_opts(sel) {
+  var now = new Date().getFullYear(), o = "";
+  for (var y = now; y >= now - 15; y--) o += '<option value="' + y + '"' + (y === sel ? " selected" : "") + ">" + y + "</option>";
+  return o;
 }
-async function cy_load(i) {
+function cy_block(i) {
+  var y = CY.years[i], d = CY.data[y] || {manual: []};
+  var rows = d.manual && d.manual.length ? d.manual : [{}];
+  return '<div class="tbl-head"><label class="yearpick"><span class="ytag">' + (i + 1) + '-й год</span>' +
+    '<select data-cyyear="' + i + '" aria-label="' + (i + 1) + '-й год">' + cy_years_opts(y) + "</select></label></div>" +
+    '<div class="scroll"><table><thead><tr><th>Код продукта</th><th>Название</th><th>Число случаев</th>' +
+    "<th>Сумма, сум</th><th></th></tr></thead><tbody>" + rows.map(cy_row).join("") + "</tbody></table></div>" +
+    '<div class="actions left"><button class="btn btn-secondary" type="button" data-cyadd="1">Добавить строку</button>' +
+    '<button class="btn btn-primary" type="button" data-cysave="1">Сохранить</button></div>' +
+    '<div class="msg" data-cymsg="1" role="status"></div>';
+}
+async function cy_load(i, note) {
   var box = $("#cyBlock" + i), y = CY.years[i];
+  if (!box) return;
   box.innerHTML = '<p class="hint">Загружаем ' + y + " год…</p>";
   try {
     var d = await api("/claims/yearly?years=" + y);
     CY.data[y] = d.years[0];
     box.innerHTML = cy_block(i);
+    if (note) { var m = box.querySelector("[data-cymsg]"); m.className = "msg good"; m.textContent = note; }
   } catch (e) { box.innerHTML = fail(e); }
 }
-function cy_read(tr) {
-  var g = function (f) { return tr.querySelector('[data-f="' + f + '"]').value.trim(); };
-  return {code: g("code"), cases: g("cases"), amount: g("amount")};
-}
-async function cy_save(y, box) {
-  var m = box.querySelector('[data-cymsg="' + y + '"]'), rows = [], bad = [];
+async function cy_save(i) {
+  var box = $("#cyBlock" + i), y = CY.years[i], m = box.querySelector("[data-cymsg]"), rows = [], bad = [];
   box.querySelectorAll("tbody tr").forEach(function (tr, k) {
-    var r = cy_read(tr);
-    if (!r.code && !r.cases && !r.amount) return;              /* пустая строка — не ошибка, просто пропускаем */
-    var n = r.cases === "" ? NaN : Number(r.cases.replace(/\s/g, "")), a = fin_parse(r.amount);
-    var why = [];
-    if (!r.code) why.push("нет кода продукта");
-    else if (CY.products && !cy_name(r.code)) why.push("кода " + r.code + " нет в справочнике");
+    var g = function (f) { return tr.querySelector('[data-f="' + f + '"]').value.trim(); };
+    var code = g("code"), cases = g("cases"), amount = g("amount");
+    if (!code && !cases && !amount) return;                    /* пустая строка — пропускаем */
+    var n = cases === "" ? NaN : Number(cases.replace(/\s/g, "")), a = parse_num(amount), why = [];
+    if (!code) why.push("нет кода продукта");
+    else if (CY.products && !cy_name(code)) why.push("кода " + code + " нет в справочнике");
     if (!Number.isInteger(n) || n < 0) why.push("число случаев — целое, не меньше 0");
     if (a == null || isNaN(a)) why.push("сумма — число, например 125 000 000");
     if (why.length) bad.push("строка " + (k + 1) + ": " + why.join(", "));
-    rows.push({product_code: r.code, cases: n, amount: a});
+    rows.push({product_code: code, cases: n, amount: a});
   });
   m.className = "msg";
-  if (bad.length) { m.className = "msg bad"; m.innerHTML = "Год не сохранён — исправьте:<ul>" + bad.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>"; return; }
-  if (!rows.length && !(CY.data[y] && CY.data[y].manual.length)) { m.textContent = "Сохранять нечего: заполните хотя бы одну строку."; return; }
-  if (!rows.length && !confirm("Все строки пустые. Удалить ручные данные за " + y + " год?")) return;
-  m.textContent = "Сохраняем " + y + " год…";
+  if (bad.length) { m.className = "msg bad"; m.innerHTML = "Не сохранено — исправьте:<ul>" + bad.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>"; return; }
+  var had = CY.data[y] && CY.data[y].manual && CY.data[y].manual.length;
+  if (!rows.length && !had) { m.textContent = "Сохранять нечего: заполните хотя бы одну строку."; return; }
+  if (!rows.length && !confirm("Все строки пустые. Удалить данные за " + y + " год?")) return;
+  m.textContent = "Сохраняем…";
   try {
     var r = await send("/claims/yearly", "PUT", {year: y, rows: rows});
-    var i = CY.years.indexOf(y);
-    await cy_load(i);
-    var m2 = $("#cyBlock" + i).querySelector('[data-cymsg="' + y + '"]');
-    m2.className = "msg good";
-    m2.textContent = "Сохранено: " + r.products + " продукт., " + num(r.cases) + " случ." + (r.replaced ? " Прежние ручные данные года заменены." : "");
-    claims_summary();
-  } catch (e) { m.className = "msg bad"; m.textContent = "Год не сохранён: " + e.message + "."; }
+    cy_load(i, "Сохранено: " + r.products + " продукт., " + num(r.cases) + " случ.");
+  } catch (e) { m.className = "msg bad"; m.textContent = "Не сохранено: " + e.message + "."; }
 }
-V.main_claims = async function (el) {
+function claims_preview(b) {
+  var w = $("#cWork"), pd = b.pd_columns_ignored || [];
+  var rows = b.items.map(function (it) {
+    return imp_row(it) + '<td class="n">' + esc(it.row) + '</td><td class="nw">' + esc(it.claim_no || "—") + "</td><td>" +
+      esc(it.product_code || "—") + "</td><td>" + ddmm(it.event_date) + '</td><td class="n">' + money(it.paid) + "</td><td>" + imp_act(it) +
+      '</td><td class="notes">' + imp_notes(it) + "</td></tr>";
+  });
+  var good = (b.create_count || 0) + (b.update_count || 0);
+  w.innerHTML = "<h3>Файл" + (b.file_name ? " «" + esc(b.file_name) + "»" : "") + " — ещё не записан</h3>" +
+    (pd.length ? '<p class="flag bad">Колонки с личными данными не загружены: ' + esc(pd.join(", ")) + ".</p>" : "") +
+    imp_tiles([[b.create_count || 0, "новых"], [b.update_count || 0, "изменится"],
+               [b.error_count || 0, "с ошибками — пропустим", b.error_count ? "bad" : ""]]) +
+    tbl(["Строка", "№ дела", "Продукт", "Дата события", "Выплачено", "Действие", "Замечания"], rows, "В файле нет строк", "tall") +
+    '<div class="actions"><button class="btn btn-primary" type="button" id="cApply"' + (good ? "" : " disabled") +
+    ">Применить: загрузить " + good + " стр.</button>" +
+    '<button class="btn btn-secondary" type="button" id="cCancel">Отменить</button></div><div class="msg" id="cMsg"></div>';
+  $("#cCancel").onclick = function () { w.innerHTML = ""; };
+  $("#cApply").onclick = async function () {
+    var m = $("#cMsg"), btn = this;
+    btn.disabled = true; m.className = "msg"; m.textContent = "Загружаем…";
+    try {
+      var r = await send("/claims/import/apply", "POST", {token: b.token});
+      m.className = "msg good";
+      m.textContent = "Готово: добавлено " + r.created + ", изменено " + r.updated + ", пропущено " + r.skipped + ".";
+      $("#cCancel").textContent = "Закрыть";
+    } catch (e) {
+      btn.disabled = false; m.className = "msg bad";
+      m.textContent = "Не загружено: " + e.message + ". Если прошло больше получаса — загрузите файл ещё раз.";
+    }
+  };
+}
+V.claims = async function (el) {
   CY.years = CY.years || cy_default();
   if (!CY.products) { try { CY.products = (await api("/reference/products")).map(function (p) { return {code: p.code, name: p.name}; }); } catch (e) { CY.products = null; } }
-  var now = new Date().getFullYear(), opts = function (sel) {
-    var o = ""; for (var y = now; y >= now - 15; y--) o += '<option value="' + y + '"' + (y === sel ? " selected" : "") + ">" + y + "</option>";
-    return o;
-  };
-  CLM.years = 3;
   el.innerHTML = '<datalist id="cyProducts">' + (CY.products || []).map(function (p) {
       return '<option value="' + esc(p.code) + '">' + esc(p.name) + "</option>"; }).join("") + "</datalist>" +
-    '<div class="card"><h3>Годы</h3><p class="note">Выберите три года. Для каждого введите по продукту число страховых случаев и сумму выплат ' +
-    "или загрузите файл Excel ниже. Сохранение года заменяет его ручные данные; дела из файлов не трогаются.</p>" +
-    '<div class="years">' + CY.years.map(function (y, i) {
-      return "<label>" + (i + 1) + '-й год<select data-cyyear="' + i + '">' + opts(y) + "</select></label>"; }).join("") + "</div></div>" +
-    CY.years.map(function (y, i) { return '<div class="card" id="cyBlock' + i + '"></div>'; }).join("") +
+    CY.years.map(function (y, i) { return '<div class="card" id="cyBlock' + i + '" data-i="' + i + '"></div>'; }).join("") +
     '<div class="card"><h3>Загрузка из Excel</h3>' +
-    '<p class="note">В шаблоне одна строка — одно дело: номер дела, код продукта, дата события, статус, заявлено и выплачено. ' +
-    "Повторная загрузка того же номера дела обновляет запись. ФИО, паспорт, телефон и адрес не указывайте — такие колонки не загружаются.</p>" +
     '<div class="bar"><a class="btn btn-secondary" href="/claims/template.xlsx" download>Скачать шаблон</a>' +
-    '<button class="btn btn-primary" type="button" id="cPick">Загрузить</button>' +
-    '<input type="file" id="cFile" accept=".xlsx,.xlsm" hidden></div><div id="cWork"></div></div>' +
-    '<div class="card"><h3>Сводка за 3 года по продуктам</h3><p class="note" id="cPeriod">Загружаем…</p>' +
-    '<div id="cSum"></div><p class="hint" id="cNote" style="margin-top:8px"></p>' +
-    '<details class="files-sub"><summary>Последние загрузки файлов</summary><div id="cBatches"></div></details></div>';
+    '<button class="btn btn-primary" type="button" id="cPick">Загрузить файл</button>' +
+    '<input type="file" id="cFile" accept=".xlsx,.xlsm" hidden></div></div><div id="cWork" class="card"></div>';
   CY.years.forEach(function (y, i) { cy_load(i); });
-  claims_summary();
-  $("#cPick").onclick = function () { $("#cFile").value = ""; $("#cFile").click(); };
-  $("#cFile").onchange = async function () {
-    var f = this.files[0], w = $("#cWork");
-    if (!f) return;
-    w.innerHTML = '<p class="hint">Разбираем файл «' + esc(f.name) + "»…</p>";
-    try { claims_preview(await upload_xlsx("/claims/import", f)); }
-    catch (e) { w.innerHTML = '<p class="flag bad">Файл не принят: ' + err_text(e) + ". Проверьте, что это шаблон из кнопки «Скачать шаблон», и загрузите снова.</p>"; }
-  };
+  pick_file($("#cPick"), $("#cFile"), $("#cWork"), "/claims/import", claims_preview);
   el.onchange = function (e) {
-    var s = e.target.closest("select[data-cyyear]");
-    if (s) {
-      var i = Number(s.dataset.cyyear), y = Number(s.value);
-      if (CY.years.indexOf(y) >= 0 && CY.years.indexOf(y) !== i) {
-        s.value = CY.years[i];
-        alert(y + " год уже выбран в другом блоке. Выберите другой год.");
-        return;
-      }
-      CY.years[i] = y; cy_load(i); return;
+    var s = e.target.closest("select[data-cyyear]"); if (!s) return;
+    var i = Number(s.dataset.cyyear), y = Number(s.value);
+    if (CY.years.indexOf(y) >= 0 && CY.years.indexOf(y) !== i) {
+      s.value = CY.years[i];
+      var m = s.closest(".card").querySelector("[data-cymsg]");
+      m.className = "msg bad"; m.textContent = y + " год уже выбран в другом блоке — выберите другой.";
+      return;
     }
+    CY.years[i] = y; cy_load(i);
   };
   el.oninput = function (e) {
     var t = e.target;
-    if (t.dataset && t.dataset.f === "code") {         /* название подставляем в соседнюю ячейку, поле не трогаем */
-      var cell = t.closest("tr").querySelector('[data-f="name"]'), nm = cy_name(t.value.trim());
-      cell.textContent = nm || (t.value.trim() ? "нет в справочнике" : "—");
+    if (t.dataset && t.dataset.f === "code") {         /* название — в соседнюю ячейку, само поле не трогаем */
+      var nm = cy_name(t.value.trim());
+      t.closest("tr").querySelector('[data-f="name"]').textContent = nm || (t.value.trim() ? "нет в справочнике" : "—");
     }
   };
-  el.addEventListener("focusout", function (e) { if (e.target.classList && e.target.classList.contains("fin-amt")) fin_fmt(e.target); });
+  el.addEventListener("focusout", function (e) { if (e.target.classList && e.target.classList.contains("amt")) fmt_input(e.target); });
   el.onclick = function (e) {
     var b = e.target.closest("[data-cyadd],[data-cysave],[data-cydel]"); if (!b) return;
+    var card = b.closest(".card"), i = Number(card.dataset.i);
     if (b.dataset.cydel) {
       var tb = b.closest("tbody"), tr = b.closest("tr");
       if (tb.children.length > 1) tr.remove(); else tr.querySelectorAll("input").forEach(function (x) { x.value = ""; });
       return;
     }
-    var y = Number(b.dataset.cyadd || b.dataset.cysave), box = b.closest(".card");
     if (b.dataset.cyadd) {
-      box.querySelector("tbody").insertAdjacentHTML("beforeend", cy_row(y, {}));
-      var rs = box.querySelectorAll("tbody tr"); rs[rs.length - 1].querySelector("input").focus();
+      card.querySelector("tbody").insertAdjacentHTML("beforeend", cy_row({}));
+      var rs = card.querySelectorAll("tbody tr"); rs[rs.length - 1].querySelector("input").focus();
       return;
     }
-    cy_save(y, box);
+    cy_save(i);
   };
 };
 
 /* --------------------------------------------------------------- навигация */
-var cur = {g: "main", s: "staff"};
-var MORE_OPEN = false;
+var cur = "staff", WHO = "";
 function paint_nav() {
-  var inMore = cur.g !== "main";
-  var open = MORE_OPEN || inMore;
   $("#nav").innerHTML = MAIN.map(function (s) {
-    return '<a class="nv' + (cur.g === "main" && cur.s === s.id ? " on" : "") + '" href="#main/' + s.id + '">' + s.icon + "<span>" + s.title + "</span></a>";
+    return '<a class="nv' + (cur === s.id ? " on" : "") + '" href="#' + s.id + '"' + (cur === s.id ? ' aria-current="page"' : "") + ">" +
+      s.icon + "<span>" + s.title + "</span></a>";
   }).join("") +
-    '<button class="nv' + (inMore ? " on" : "") + '" type="button" id="moreBtn" aria-expanded="' + open + '" aria-controls="moreList">' +
-    ICON.more + "<span>Дополнительно</span>" + ICON.chev + "</button>" +
-    '<div class="sub" id="moreList"' + (open ? "" : " hidden") + ">" + NAV.map(function (g) {
-      return "<h4>" + esc(g.title) + "</h4>" + g.items.map(function (it) {
-        return '<a href="#' + g.id + "/" + it.id + '"' + (cur.g === g.id && cur.s === it.id ? ' class="on" aria-current="page"' : "") + ">" + esc(it.title) + "</a>";
-      }).join("");
-    }).join("") + "</div>" +
     '<div class="foot"><div class="who" id="who">' + esc(WHO) + "</div>" +
     '<button class="nv" type="button" id="logout">' + ICON.exit + "<span>Выход</span></button></div>";
-  $("#moreBtn").onclick = function () { MORE_OPEN = !(this.getAttribute("aria-expanded") === "true"); paint_nav(); };
   $("#logout").onclick = async function () {
     try { await send("/auth/logout", "POST", {}); } catch (e) { /* сессия уже закрыта — всё равно уходим на вход */ }
     location.href = "/login?next=" + encodeURIComponent("/admin");
   };
 }
-var WHO = "";
-async function open_section(gid, sid, arg) {
-  var s, fn;
-  if (gid === "main") {
-    s = MAIN.filter(function (x) { return x.id === sid; })[0] || MAIN[0];
-    cur = {g: "main", s: s.id};
-  } else {
-    var g = NAV.filter(function (x) { return x.id === gid; })[0];
-    if (!g) return open_section("main", "staff");
-    s = g.items.filter(function (x) { return x.id === sid; })[0] || g.items[0];
-    cur = {g: g.id, s: s.id};
-  }
-  if (location.hash !== "#" + cur.g + "/" + cur.s) history.replaceState(null, "", "#" + cur.g + "/" + cur.s);
+async function open_section(id) {
+  var s = MAIN.filter(function (x) { return x.id === id; })[0] || MAIN[0];
+  cur = s.id;
+  if (location.hash !== "#" + cur) history.replaceState(null, "", "#" + cur);
   document.body.classList.remove("nav-open"); $("#menuBtn").setAttribute("aria-expanded", "false");
   paint_nav();
   $("#title").textContent = s.title;
-  $("#why").textContent = s.why || "";
   document.title = s.title + " — админка INSON";
   var view = $("#view");
-  view.onclick = null; view.onchange = null; view.oninput = null;
-  view.replaceWith(view = view.cloneNode(false));         /* снимаем слушатели прежнего раздела (addEventListener) */
-  view.innerHTML = '<p class="hint">Загружаем раздел…</p>';
-  fn = V[cur.g + "_" + cur.s];
-  if (!fn) { view.innerHTML = '<p class="hint">Раздел пока пуст.</p>'; return; }
-  try { await fn(view, arg); } catch (e) { view.innerHTML = fail(e); }
-  if (window.i18nPaint) window.i18nPaint(view);
+  view.replaceWith(view = view.cloneNode(false));         /* снимаем слушатели прежнего раздела */
+  view.innerHTML = '<p class="hint">Загружаем…</p>';
+  try { await V[cur](view); } catch (e) { view.innerHTML = fail(e); }
 }
 $("#menuBtn").onclick = function () {
   var on = !document.body.classList.contains("nav-open");
   document.body.classList.toggle("nav-open", on); this.setAttribute("aria-expanded", String(on));
 };
 window.addEventListener("hashchange", function () {
-  var p = location.hash.replace("#", "").split("/");
-  if (p[0] && (p[0] !== cur.g || p[1] !== cur.s)) open_section(p[0], p[1]);
+  var id = location.hash.replace("#", "").split("/").pop();   /* прежние ссылки #main/staff тоже открываются */
+  if (id !== cur) open_section(id);
 });
 (function () {
-  var p = location.hash.replace("#", "").split("/");
-  open_section(p[0] || "main", p[1] || "staff");
+  open_section(location.hash.replace("#", "").split("/").pop() || "staff");
   api("/auth/me").then(function (u) { WHO = "Вы вошли: " + (u.full_name || u.login); var w = $("#who"); if (w) w.textContent = WHO; }).catch(function () {});
 })();
 </script>
