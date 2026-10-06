@@ -385,6 +385,144 @@ def _same(key: str, a, b, brands=()) -> bool:
 
 
 # ================================================================================================
+#  1а. Повреждения с фото (06.10.2026): тяжесть, вес в уровне риска, штраф балла скоринга
+# ================================================================================================
+
+# Тяжесть повреждения по описанию модели: «существенные» — ремонт кузова и агрегатов (вес в уровне как у признака
+# «состояние изношено»), «косметические» — ЛКП, мелкие царапины и сколы (слабый вес). Экспертно, calibrated = 0.
+DAMAGE_COSMETIC_WEIGHT = 0.5          # косметические — половина повышающего признака
+DAMAGE_MAJOR_WEIGHT = 1.0             # существенные — как «состояние изношено»
+DAMAGE_SCORE_PENALTY = {"cosmetic": 10, "major": 30}      # штраф балла скоринга 0–500 (экспертно, не калибровано)
+_DMG_MINOR_QUAL = ("мелк", "незначит", "небольш", "поверхност", "minor", "small", "slight", "superficial",
+                   "kichik", "mayda")
+_DMG_COSMETIC = ("царап", "потерт", "скол", "лкп", "краск", "полиров", "scratch", "scuff", "chip",
+                 "paint", "cosmetic", "tirnal", "chizil", "qirilgan", "bo'yoq")
+_DMG_MAJOR = ("вмятин", "деформ", "трещин", "разбит", "разрыв", "коррози", "ржав", "течь", "сломан", "отсутств",
+              "прогни", "обгор", "оторван", "пробит", "dent", "crack", "broken", "rust", "corros", "leak", "missing",
+              "deform", "burn", "torn", "ezil", "singan", "yoriq", "zang", "pachoq", "teshil", "kuyg")
+DAMAGE_SEVERITIES = ("cosmetic", "major")
+
+
+def damage_severity(d) -> str:
+    """
+    Тяжесть одного повреждения: cosmetic | major. Чистая функция. Явная тяжесть модели (severity: cosmetic | minor |
+    major | substantial) важнее слов. Слова: «вмятина», «трещина», «коррозия» — существенные; «царапина», «скол» —
+    косметические; уточнение «мелкая», «незначительная» делает повреждение косметическим. Непонятное описание —
+    существенное (осторожно: пусть андеррайтер посмотрит). Примеры: «царапины левого крыла» → cosmetic;
+    «вмятина заднего бампера» → major; «мелкая вмятина двери» → cosmetic.
+    """
+    if isinstance(d, str):
+        d = {"what": d}
+    if not isinstance(d, dict):
+        return "major"
+    sev = str(d.get("severity") or "").strip().lower()
+    if sev in ("cosmetic", "minor", "light"):
+        return "cosmetic"
+    if sev in ("major", "substantial", "significant", "severe"):
+        return "major"
+    low = f"{d.get('what') or ''} {d.get('where') or ''}".lower().replace("ё", "е").replace("ʻ", "'").replace("ʼ", "'")
+    if any(w in low for w in _DMG_MINOR_QUAL):
+        return "cosmetic"
+    if any(w in low for w in _DMG_MAJOR):
+        return "major"
+    if any(w in low for w in _DMG_COSMETIC):
+        return "cosmetic"
+    return "major"
+
+
+def damages_summary(damages) -> dict:
+    """Повреждения с фото → {count, cosmetic, major, severity (major | cosmetic | None), items[{what, where,
+    severity}], weight (вес в уровне риска), penalty (штраф балла скоринга), calibrated}. Чистая функция.
+    Пример: [«царапины левого крыла», «вмятина заднего бампера»] → 2 шт., 1 косметическое и 1 существенное,
+    severity major, вес 1, штраф 30."""
+    items = []
+    for d in damages or []:
+        if not d:
+            continue
+        dd = {"what": d} if isinstance(d, str) else dict(d)
+        items.append({"what": dd.get("what"), "where": dd.get("where"), "severity": damage_severity(dd)})
+    major = sum(1 for x in items if x["severity"] == "major")
+    cosmetic = len(items) - major
+    severity = "major" if major else ("cosmetic" if cosmetic else None)
+    return {"count": len(items), "cosmetic": cosmetic, "major": major, "severity": severity, "items": items,
+            "weight": DAMAGE_MAJOR_WEIGHT if major else (DAMAGE_COSMETIC_WEIGHT if cosmetic else 0.0),
+            "penalty": DAMAGE_SCORE_PENALTY.get(severity, 0) if severity else 0, "calibrated": CALIBRATED}
+
+
+def _whole(x):
+    """1.0 → 1, 0.5 → 0.5: целые веса признаков показываются без дроби, как раньше."""
+    x = round(float(x), 2)
+    return int(x) if x == int(x) else x
+
+
+# ================================================================================================
+#  1б. Подгруппа транспорта (06.10.2026): советы, мероприятия и сценарии класса 3 по подгруппе
+# ================================================================================================
+
+VEH_GROUPS = ("car", "truck", "bus", "trailer", "special_wheeled", "special_tracked", "agro", "moto")
+VEH_SPECIAL = ("special_wheeled", "special_tracked", "agro")
+# вид объекта экрана (шаблон класса 3, object.kinds) → подгруппа
+VEH_GROUP_BY_KIND = {
+    "car": "car", "electric_car": "car", "truck": "truck", "concrete_mixer": "truck", "trailer": "trailer",
+    "bus": "bus", "moto": "moto", "motorcycle": "moto",
+    "truck_crane": "special_wheeled", "aerial_platform": "special_wheeled", "concrete_pump": "special_wheeled",
+    "wheel_loader": "special_wheeled", "forklift": "special_wheeled", "telehandler": "special_wheeled",
+    "backhoe_loader": "special_wheeled", "drilling_rig": "special_wheeled", "road_machinery": "special_wheeled",
+    "special_other": "special_wheeled", "special": "special_wheeled",
+    "crawler_crane": "special_tracked", "excavator": "special_tracked", "bulldozer": "special_tracked",
+    "tractor": "agro", "combine": "agro",
+}
+# факторы справочника только для спецтехники (у легковых и грузовых их не уточняют и не советуют) и только для
+# дорожного транспорта (у спецтехники машиной управляет оператор, «круг водителей» не советуется)
+VEH_SPECIAL_ONLY_FACTORS = ("spec_site", "spec_guard", "spec_operator", "engine_hours")
+VEH_ROAD_ONLY_FACTORS = ("drivers",)
+
+
+def vehicle_group(class_code: Optional[str], class_fields: Optional[dict] = None, kind: Optional[str] = None,
+                  vehicle_category: Optional[dict] = None, group: Optional[str] = None,
+                  text: str = "") -> Optional[str]:
+    """
+    Подгруппа транспорта класса 3: car | truck | bus | trailer | special_wheeled | special_tracked | agro | moto.
+    Чистая функция. Порядок: поле класса veh_group (сотрудник или техпаспорт) → вид объекта экрана → категория с фото
+    (vehicle_category модели) → группа объекта special (колёсная спецтехника) → слова в описании объекта →
+    по умолчанию легковой (КАСКО и прочие продукты ТС). Не класс 3 — None.
+    """
+    if str(class_code or "") != "3":
+        return None
+    cf = class_fields or {}
+    v = str(cf.get("veh_group") or "").strip().lower()
+    if v == "agri":
+        v = "agro"
+    if v in VEH_GROUPS:
+        return v
+    if kind and VEH_GROUP_BY_KIND.get(str(kind)):
+        return VEH_GROUP_BY_KIND[str(kind)]
+    vc = (vehicle_category or {}).get("code") if isinstance(vehicle_category, dict) else None
+    if vc in VEH_GROUPS:
+        return vc
+    if text:
+        from .vehicle_prefill import group_from_text
+        g = group_from_text(text)
+        if g in VEH_GROUPS and (g in VEH_SPECIAL or group != "special"):
+            return g
+    if group == "special":
+        return "special_wheeled"
+    return "car"
+
+
+def vehicle_factor_applies(factor: str, veh_group: Optional[str]) -> bool:
+    """Фактор справочника класса 3 уместен для подгруппы: спецфакторы (площадка, охрана площадки, оператор,
+    моточасы) — только спецтехнике, «допущенные водители» — только дорожному транспорту. Не класс 3 — всегда да."""
+    if not veh_group:
+        return True
+    if factor in VEH_SPECIAL_ONLY_FACTORS:
+        return veh_group in VEH_SPECIAL
+    if factor in VEH_ROAD_ONLY_FACTORS:
+        return veh_group not in VEH_SPECIAL
+    return True
+
+
+# ================================================================================================
 #  1. Уровень риска
 # ================================================================================================
 
@@ -403,13 +541,21 @@ def risk_level(inputs: dict, settings: Optional[dict] = None) -> dict:
 
     # состояние объекта
     damages = [d for d in (inputs.get("damages") or []) if d]
+    # повреждения с фото (06.10.2026): существенные — признак «повреждения» весом как «изношено»; только
+    # косметические — отдельный слабый повышающий признак (вес 0,5) рядом с состоянием объекта
+    dsum = damages_summary(damages)
     cond = str(inputs.get("condition") or "").lower() or None
     year = inputs.get("year")
     new = year is not None and today.year - int(year) <= int(st["new_object_years"])
-    if damages or cond == "damaged":
-        factors.append({"code": "f_cond_damage", "sign": "up", "params": {"n": len(damages) or 1}})
+    if dsum["major"] or cond == "damaged":
+        factors.append({"code": "f_cond_damage", "sign": "up", "weight": DAMAGE_MAJOR_WEIGHT,
+                        "params": {"n": len(damages) or 1}})
     elif cond == "worn":
         factors.append({"code": "f_cond_worn", "sign": "up", "params": {}})
+    elif dsum["cosmetic"]:
+        # только косметические повреждения: слабый повышающий признак вместо «новый» / «не влияет»
+        factors.append({"code": "f_cond_damage_minor", "sign": "up", "weight": DAMAGE_COSMETIC_WEIGHT,
+                        "params": {"n": dsum["cosmetic"]}})
     elif new and (inputs.get("inspected") or cond in ("new", "good")):
         factors.append({"code": "f_cond_new", "sign": "down", "params": {"year": year}})
     elif inputs.get("inspected") or cond in ("new", "good"):
@@ -452,10 +598,11 @@ def risk_level(inputs: dict, settings: Optional[dict] = None) -> dict:
     else:
         factors.append({"code": "f_docs_up", "sign": "up", "params": {}})
 
-    up = sum(1 for f in factors if f["sign"] == "up")
-    down = sum(1 for f in factors if f["sign"] == "down")
+    # вес признака — 1, у косметических повреждений — 0,5 (целые суммы показываются без дроби, как раньше)
+    up = _whole(sum(float(f.get("weight", 1)) for f in factors if f["sign"] == "up"))
+    down = _whole(sum(float(f.get("weight", 1)) for f in factors if f["sign"] == "down"))
     known = sum(1 for f in factors if f["sign"] != "unknown")
-    net = up - down
+    net = _whole(up - down)
     few = known < int(rule["min_known"])
     if few:
         level = "moderate"
@@ -2151,6 +2298,9 @@ def insurance_score(act_data: dict) -> dict:
         main = min(rows, key=lambda r: r["score"])     # самая опасная часть — с наименьшим баллом
     else:
         main = score_one(D.get("analytics"), (D.get("risk") or {}).get("level"))
+    # повреждения с фото (06.10.2026): штраф балла −10 (косметические) / −30 (существенные), экспертно
+    dmg = damages_summary((D.get("inspection") or {}).get("damages"))
+    main = damage_penalty(main, dmg["penalty"], dmg["count"], dmg["severity"])
     bounds = main.get("bounds") or list(SCORE_BOUNDS)
     method = ("балл = 500 − 5 × балл риска 0–100 аналитики акта (чем выше балл риска, тем хуже); "
               f"сектора по порогам аналитики: {bands_text(bounds)}; подкласс 1 — верхняя треть сектора"
@@ -2166,7 +2316,35 @@ def insurance_score(act_data: dict) -> dict:
                        "sub": r["sub"], "score_class": r["class_code"], "class_label": r["class_label"],
                        "label_code": r["label_code"], "risk_score_100": r["risk_score_100"], "basis": r["basis"],
                        "level": r.get("level")} for r in rows],
-            "method_text": method, "note": SCORE_NOTE, "calibrated": CALIBRATED}
+            "method_text": method, "note": SCORE_NOTE, "calibrated": CALIBRATED,
+            "damage_penalty": main.get("damage_penalty", 0), "damage_severity": main.get("damage_severity"),
+            "damage_count": main.get("damage_count", 0), "score_before_damages": main.get("score_before_damages")}
+
+
+def damage_penalty(row: dict, pen: int, n: int = 0, severity: Optional[str] = None) -> dict:
+    """
+    Штраф балла скоринга за повреждения с фото: балл − pen (не ниже 0), класс — по баллу риска + pen / 5 (так же,
+    как без штрафа: 500 − 5 × балл риска), отдельная составляющая «Повреждения с фото» с минусом — сумма
+    составляющих по-прежнему равна баллу. Экспертно (−10 косметические, −30 существенные), calibrated = 0.
+    Пример: балл 337 (B2), существенные повреждения → 307 (B3).
+    """
+    if not pen:
+        return dict(row, damage_penalty=0, damage_severity=None, damage_count=0, score_before_damages=None)
+    s0 = int(row["score"])
+    s = max(SCORE_MIN, s0 - int(pen))
+    eff = s0 - s
+    risk = row.get("risk_score_100")
+    bounds = row.get("bounds") or list(SCORE_BOUNDS)
+    band = score_band(s, bounds, round(float(risk) + eff / 5, 6)) if row.get("basis") == "risk_score" \
+        and risk is not None else score_band(s, bounds)
+    comp = {"code": "damages", "label": "Повреждения с фото", "points": -eff, "max": 0, "applicable": True,
+            "risk_points": None, "weight": None, "n": n, "severity": severity,
+            "why": f"повреждения с фото ({n}, {'существенные' if severity == 'major' else 'косметические'}): "
+                   f"−{eff} (экспертно, не калибровано)", "calibrated": CALIBRATED}
+    out = dict(row, score=s, **band)
+    out["components"] = list(row.get("components") or []) + [comp]
+    out.update(damage_penalty=eff, damage_severity=severity, damage_count=n, score_before_damages=s0)
+    return out
 
 
 # ================================================================================================

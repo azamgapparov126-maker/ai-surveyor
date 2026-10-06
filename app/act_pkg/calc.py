@@ -239,13 +239,24 @@ def _napp_settings(analytics: dict, fs: dict, st: Optional[dict]) -> None:
     NP["branch_min_contracts"] = int((ae.merge_settings(st or {}).get("napp") or {}).get("branch_min_contracts", 200))
 
 
+def veh_measure_codes(tpl: dict, veh_group: Optional[str], group_ra: str) -> Optional[list]:
+    """Мероприятия шаблона: своя подгруппа транспорта (car, truck, …) → спецтехника (special) → группа объекта."""
+    d = (tpl or {}).get("measures")
+    if veh_group and isinstance(d, dict):
+        if isinstance(d.get(veh_group), list):
+            return list(d[veh_group])
+        if veh_group in ae.VEH_SPECIAL and isinstance(d.get("special"), list):
+            return list(d["special"])
+    return ctpl.for_group(d, group_ra)
+
+
 def _analytics_block(con, ctx, cls, product_code, region_ra, S, V, term, rate_res, scen, meas, level, statutory, th,
-                     group_ra, tpl_risks, block_errors) -> dict:
+                     group_ra, tpl_risks, block_errors, veh_group=None) -> dict:
     """Аналитика раздела 4 (act_analytics.build) для одного класса; сбой — блок с reason = error."""
     try:
         analytics = aa.build(con, ctx, cls=cls, product_code=product_code, region=region_ra, S=S, V=V,
                              term_days=term, rate_res=rate_res, scen=scen, meas=meas, act_level=level,
-                             statutory=statutory, th=th, group=group_ra, tpl_risks=tpl_risks)
+                             statutory=statutory, th=th, group=group_ra, tpl_risks=tpl_risks, veh_group=veh_group)
         for e in analytics.get("errors") or []:
             block_errors.append({"block": "analytics:" + e["block"], "error": e["error"]})
     except Exception as e:

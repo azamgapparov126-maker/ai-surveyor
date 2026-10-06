@@ -19,7 +19,8 @@ from .view_rows import (_check_text, _class_label, _disc_text, _doc_kind_label, 
     _s1_label, _text)
 from .view_factors import _factor_view
 from .view_fork import _fork_parts_view, _fork_view, _territory
-from .view_blocks import _alt_view, _fr_how_text, _fr_text, _franchise_extra, _measures_view, _scenarios_view
+from .view_blocks import (_alt_view, _fr_how_text, _fr_text, _franchise_extra, _measures_view, _scenarios_view,
+    scenario_facts)
 from .view_analytics import _analytics_view
 from .view_parts import _below_min_view, _min_rate_view, _min_src_text, _objects_view, _parts_view
 
@@ -103,7 +104,8 @@ def render(D: dict, lang: str, meta: dict) -> dict:
         "missing": v5.missing_labels,
         "inspection": {"done": bool(ins["photos"] and ins["ai"]), "photos": ins["photos"],
                        "views_seen": ins["views_seen"], "missing_views": ins["missing_views"],
-                       "damages": ins["damages"], "documents": ins["documents"]},
+                       "damages": [dict(d, severity=ae.damage_severity(d)) for d in ins["damages"] or []],
+                       "damages_summary": _damages_json(ins["damages"], lang), "documents": ins["documents"]},
         "recognized": recognized_view(rec, lang, group=D["group"]),
         # шаблон анализа класса, по которому собран акт (справочник class_templates): версия, поля класса,
         # документы и статистика класса — на языке акта; акты до 30.09.2026 — без шаблона
@@ -113,6 +115,8 @@ def render(D: dict, lang: str, meta: dict) -> dict:
                                         "totals": None, "notes": []},
         **({"suggested_parts": PV["json"]["suggested_parts"]} if PV and not PV["json"]["confirmed"] else {}),
         "footer": t("footer", lang),
+        # подгруппа транспорта класса 3 (06.10.2026): car | truck | bus | trailer | special_* | agro | moto; иначе None
+        "veh_group": scenario_facts(D)["veh_group"],
         # регион и территория страхования (02.10.2026): особые регионы uz_all (вся республика) и other (текстом)
         "region": {"code": must.get("region_code"), "label": region_label(must, lang),
                    "scope": must.get("region_scope"), "text": must.get("region_text"),
@@ -141,6 +145,26 @@ def render(D: dict, lang: str, meta: dict) -> dict:
         print("акт: скоринг не показан:", type(e).__name__, e)
         out["scoring"] = {"available": False, "reason": "render_error", "calibrated": ae.CALIBRATED}
     return out
+
+
+def damages_text(damages: list, lang: str) -> str:
+    """«царапины (левое крыло), косметические; вмятина (задний бампер), существенные»."""
+    out = []
+    for d in damages or []:
+        sev = t("dmg_sev_" + ae.damage_severity(d), lang)
+        out.append(str(d.get("what") or "") + (f" ({d['where']})" if d.get("where") else "") + f", {sev}")
+    return "; ".join(out)
+
+
+def _damages_json(damages: list, lang: str) -> dict:
+    """Повреждения с фото для ответа: число, тяжесть, вес в уровне риска, штраф балла скоринга (экспертно)."""
+    s = ae.damages_summary(damages)
+    return {"count": s["count"], "cosmetic": s["cosmetic"], "major": s["major"], "severity": s["severity"],
+            "severity_label": t("dmg_sev_" + s["severity"], lang) if s["severity"] else None,
+            "level_weight": s["weight"], "score_penalty": s["penalty"],
+            "excluded_as_preexisting": bool(s["count"]),
+            "text": t("cp_s2_damages", lang, list=damages_text(damages, lang)) if s["count"] else None,
+            "calibrated": ae.CALIBRATED}
 
 
 def _rate_json(D: dict, lang: str, PV: Optional[dict], mode: str, pf: dict) -> dict:
@@ -225,17 +249,18 @@ def _render_s2(D: dict, lang: str) -> dict:
         rows2.append(_row(t("damages", lang), t("no_inspection", lang)))
     else:
         p2.append(t("p_inspected", lang, n=ins["photos"]))
-        seen = [tx.label(tx.VIEW_LABELS, v, lang) for v in ins["views_seen"] if v != "other"]
+        vg = scenario_facts(D)["veh_group"]
+        seen = [tx.view_label(v, lang, vg) for v in ins["views_seen"] if v != "other"]
         rows2.append(_row(t("views_seen", lang), ", ".join(seen) or NA))
         if ins["required_views"]:
             rows2.append(_row(t("views_missing", lang),
-                              ", ".join(tx.label(tx.VIEW_LABELS, v, lang) for v in ins["missing_views"])
+                              ", ".join(tx.view_label(v, lang, vg) for v in ins["missing_views"])
                               or t("views_all", lang)))
         else:
             rows2.append(_row(t("views_missing", lang), t("views_none_needed", lang)))
         if ins["damages"]:
-            rows2.append(_row(t("damages", lang), "; ".join(
-                d["what"] + (f" ({d['where']})" if d.get("where") else "") for d in ins["damages"])))
+            # повреждения с фото (06.10.2026): тяжесть каждого и пометка — исключаются как предсуществующие
+            rows2.append(_row(t("damages", lang), damages_text(ins["damages"], lang), t("dmg_preexisting", lang)))
         else:
             rows2.append(_row(t("damages", lang), t("damages_none", lang)))
     if ins.get("parsed_docs"):
@@ -316,7 +341,7 @@ def _render_s4(D: dict, lang: str, PV: Optional[dict], OV: Optional[dict]) -> Si
     level_label = tx.label(tx.LEVEL_LABELS, risk["level"], lang)
     factors = [_text(f, lang) for f in risk["factors"]]
     rule = risk["rule"]
-    minus = lambda x: str(x).replace("-", "−")
+    minus = lambda x: (str(x) if lang == "en" else str(x).replace(".", ",")).replace("-", "−")
     rule_text = t("level_rule", lang, net=minus(risk["net"]), low=minus(rule["low_max_net"]),
                   high=minus(rule["high_min_net"]), k=rule["min_known"])
     mode = rate_res["mode"]
@@ -337,7 +362,7 @@ def _render_s4(D: dict, lang: str, PV: Optional[dict], OV: Optional[dict]) -> Si
     fr_text = PV["fr_text"] if PV else _fr_text(fr, lang)
     if not PV:
         rows4.append(_row(t("franchise", lang), fr_text))
-    scv = _scenarios_view(D.get("scenarios"), must, lang)
+    scv = _scenarios_view(D.get("scenarios"), must, lang, scenario_facts(D))
     rows4 += scv["rows"]
     if PV:
         # комплексный продукт: уровень договора — по самой опасной части; дальше таблица частей и разбор каждой
@@ -468,7 +493,7 @@ def _render_s5(D: dict, lang: str, PV: Optional[dict], OV: Optional[dict], FAV: 
         p5.append(t("disc_priority", lang))
     else:
         p5.append(t("disc_none", lang))
-    checks = [_check_text(c, lang, D["group"]) for c in dec["checks"]]
+    checks = [_check_text(c, lang, D["group"], scenario_facts(D)["veh_group"]) for c in dec["checks"]]
     if checks:
         lists5.append({"title": t("checks_title", lang), "items": checks})
     missing_labels = [_s1_label(k, lang, D["group"]) for k in D["missing"]]

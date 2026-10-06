@@ -85,8 +85,83 @@ def _franchise_extra(fr: dict, how: list, alts: list, lang: str) -> dict:
             "calibrated": ae.CALIBRATED}
 
 
-def _scenarios_view(sc: Optional[dict], must: dict, lang: str) -> dict:
-    """Строки раздела 4, абзац с определениями, списки «как посчитано» и JSON блока scenarios."""
+def scenario_facts(D: dict) -> dict:
+    """Что известно об объекте для текста сценариев: подгруппа транспорта, защита, охрана, место, отсеки, сейсмозона.
+    Акты до 06.10.2026 без подгруппы — подгруппа по полям класса, виду и группе объекта (та же функция движка)."""
+    o = D.get("optional") or {}
+    must = D.get("must") or {}
+    vg = D.get("veh_group")
+    if vg is None and str(must.get("class_code") or "") == "3":
+        vg = ae.vehicle_group("3", o.get("class_fields"), D.get("object_kind"), None, D.get("group"))
+    return {"veh_group": vg, "protection": o.get("protection"), "guard": o.get("guard"),
+            "location": o.get("location"), "compartments": o.get("compartments"),
+            "seismic_zone": o.get("seismic_zone")}
+
+
+def _have(items: list, lang: str) -> str:
+    """«охраняемая стоянка — есть, иммобилайзер — нет, GPS-метка — не указано»."""
+    return ", ".join(t("sc_have_item", lang, what=t(k, lang), v=t("sc_have_" + v, lang)) for k, v in items)
+
+
+def scenario_texts(sc: dict, facts: Optional[dict], lang: str) -> dict:
+    """
+    Сценарии убытка словами (06.10.2026): по одной фразе на PML, EML, MFL с суммой и долей из расчёта; у MFL —
+    что снижает его вероятность и что из этого есть у объекта (по данным сотрудника). Транспорт — по подгруппе
+    (дорожный или спецтехника), класс 8 — пожар в отсеке / на всё здание / полная гибель (землетрясение — словами),
+    класс 9 — помещение / здание / полная гибель, классы по шаблону — подпись шаблона. Доли экспертные.
+    """
+    f = facts or {}
+    items = sc.get("items") or {}
+    pcts = [(items.get(s) or {}).get("pct") for s in ("PML", "EML", "MFL")]
+    digits = 0 if all(p is not None and float(p) == int(p) for p in pcts) else 1
+    rule = sc.get("rule")
+    vg = f.get("veh_group")
+    prot, guard, loc = f.get("protection"), f.get("guard"), f.get("location")
+    out = {}
+    for s in ("PML", "EML", "MFL"):
+        it = items.get(s) or {}
+        p = dict(pct=tx.pct_fixed(it.get("pct"), lang, digits), amount=money(it.get("amount"), lang))
+        if sc.get("source") == "template" or rule not in ("vehicle", "property8", "property9"):
+            body = t("sc_txt_tpl", lang, what=_scenario_what(it, lang), **p)
+        elif rule == "vehicle":
+            pre = "sc_txt_sp_" if vg in ae.VEH_SPECIAL else "sc_txt_veh_"
+            body = t(pre + s.lower(), lang, **p)
+        elif rule == "property8":
+            if it.get("what") == "sc_w_eq":
+                body = t("sc_txt_p8_eq", lang, zone=(it.get("what_params") or {}).get("zone") or "?", **p)
+            elif s == "PML":
+                body = t("sc_txt_p8_pml" if f.get("compartments") else "sc_txt_p8_pml_whole", lang, **p)
+            else:
+                body = t("sc_txt_p8_" + s.lower(), lang, **p)
+        else:
+            body = t("sc_txt_p9_" + s.lower(), lang, **p)
+        line = t("sc_txt_line", lang, name=t("sc_txt_name_" + s.lower(), lang), body=body)
+        if s == "MFL" and rule in ("vehicle", "property8", "property9") and sc.get("source") != "template":
+            parked = "yes" if (guard or loc in ("guarded", "closed_storage")) else (
+                "no" if (guard is False or loc in ("open_area", "construction", "port")) else "na")
+            if rule == "vehicle" and vg in ae.VEH_SPECIAL:
+                have = _have([("sc_have_site", parked),
+                              ("sc_have_gps_sp", "yes" if prot == "tracker" else ("na" if not prot else "no"))], lang)
+                line += ". " + t("sc_txt_sp_reduce", lang, have=have)
+            elif rule == "vehicle":
+                have = _have([("sc_have_parking", parked),
+                              ("sc_have_immo", "yes" if prot in ("immo", "tracker") else ("na" if not prot else "no")),
+                              ("sc_have_gps", "yes" if prot == "tracker" else ("na" if not prot else "no"))], lang)
+                line += ". " + t("sc_txt_veh_reduce", lang, have=have)
+            else:
+                pv = tx.label(tx.OPTION_LABELS, "protection:" + prot, lang) if prot else t("sc_have_na", lang)
+                have = t("sc_have_item", lang, what=t("sc_have_protection", lang), v=pv)
+                if rule == "property8":
+                    have += ", " + t("sc_have_item", lang, what=t("sc_have_compartments", lang),
+                                     v=t("sc_have_yes" if f.get("compartments") else "sc_have_na", lang))
+                line += ". " + t("sc_txt_p8_reduce" if rule == "property8" else "sc_txt_p9_reduce", lang, have=have)
+        out[s] = line
+    return out
+
+
+def _scenarios_view(sc: Optional[dict], must: dict, lang: str, facts: Optional[dict] = None) -> dict:
+    """Строки раздела 4, абзац с определениями, списки «как посчитано» и JSON блока scenarios.
+    facts — что известно об объекте (scenario_facts): по ним сценарии словами (поле text у pml, eml, mfl)."""
     sc = sc or {"available": False, "reason": "sc_na_error", "class_code": must.get("class_code")}
     # порядок заказчика PML ≤ EML ≤ MFL (с 29.09.2026); старые сохранённые акты — прежние тексты
     classic = sc.get("order") == ax.SCENARIO_ORDER
@@ -109,11 +184,18 @@ def _scenarios_view(sc: Optional[dict], must: dict, lang: str) -> dict:
     # проценты трёх сценариев — с одинаковым числом знаков: все целые — без дроби, иначе один знак
     pcts = [sc["items"][s]["pct"] for s in ("PML", "EML", "MFL")]
     digits = 0 if all(p is not None and float(p) == int(p) for p in pcts) else 1
+    try:
+        texts = scenario_texts(sc, facts, lang)
+    except Exception as e:               # сбой текста сценария не роняет акт: остаётся подпись what
+        print("акт: сценарии словами не собраны:", type(e).__name__, e)
+        texts = {}
     for s, lab in (("PML", "sc_pml"), ("EML", "sc_eml"), ("MFL", "sc_mfl")):
         it = sc["items"][s]
         what = _scenario_what(it, lang)
         pct_text = tx.pct_fixed(it["pct"], lang, digits)
         js[s.lower()] = {"amount": round(it["amount"]), "pct": it["pct"], "pct_text": pct_text, "what": what,
+                         # сценарий словами (06.10.2026): одна строка акта; доли экспертные
+                         "text": texts.get(s) or f"{s}: {what} — {pct_text}", "text_expert": True,
                          "what_code": it["what"], "state_code": it.get("state"),
                          "source_scenario": it.get("source_scenario"),
                          # формула собрана модулем по-русски — на другом языке акта её не отдаём

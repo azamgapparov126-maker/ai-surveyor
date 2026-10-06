@@ -369,6 +369,11 @@ TX_SECTIONS = {
     "f_cond_damage": {"ru": "Состояние объекта: видимые повреждения ({n}) — повышает риск",
                       "uz": "Obyekt holati: koʻrinadigan shikastlar ({n}) — xavfni oshiradi",
                       "en": "Condition: visible damage ({n}) — increases risk"},
+    "f_cond_damage_minor": {"ru": "Состояние объекта: косметические повреждения ({n}) — слабо повышает риск "
+                                  "(вес 0,5, экспертно)",
+                            "uz": "Obyekt holati: kosmetik shikastlar ({n}) — xavfni biroz oshiradi "
+                                  "(vazni 0,5, ekspert baho)",
+                            "en": "Condition: cosmetic damage ({n}) — slightly increases risk (weight 0.5, expert)"},
     "f_cond_worn": {"ru": "Состояние объекта: признаки износа — повышает риск",
                     "uz": "Obyekt holati: eskirish belgilari — xavfni oshiradi",
                     "en": "Condition: signs of wear — increases risk"},
@@ -814,6 +819,20 @@ TX_SCORING = {
                            "xavf bali: 500 − 5 × {risk} {eq} {score}.",
                      "en": "Score {score} of 500 — class {code} ({label}). Based on the report's risk score {risk} of "
                            "100: 500 − 5 × {risk} {eq} {score}."},
+    "sc_text_dmg": {"ru": "С учётом повреждений с фото ({n}, {sev}): {before} − {pen} = {score} (экспертно, не калибровано).",
+                    "uz": "Suratdagi shikastlar hisobga olinganda ({n}, {sev}): {before} − {pen} = {score} (ekspert baho, "
+                          "kalibrlanmagan).",
+                    "en": "Including damage seen on photos ({n}, {sev}): {before} − {pen} = {score} (expert, not "
+                          "calibrated)."},
+    "sc_comp_dmg": {"ru": "Повреждения с фото", "uz": "Suratdagi shikastlar", "en": "Damage on photos"},
+    "sc_comp_dmg_why": {"ru": "{n} шт., {sev}: −{pen} (экспертно, не калибровано)",
+                        "uz": "{n} ta, {sev}: −{pen} (ekspert baho, kalibrlanmagan)",
+                        "en": "{n}, {sev}: −{pen} (expert, not calibrated)"},
+    "dmg_preexisting": {"ru": "исключаются из покрытия как предсуществующие",
+                        "uz": "avvaldan mavjud sifatida qoplamadan chiqariladi",
+                        "en": "excluded from cover as pre-existing"},
+    "dmg_sev_cosmetic": {"ru": "косметические", "uz": "kosmetik", "en": "cosmetic"},
+    "dmg_sev_major": {"ru": "существенные", "uz": "jiddiy", "en": "substantial"},
     "sc_text_level": {"ru": "Балл {score} из 500 — класс {code} ({label}). Балла риска нет — оценка по уровню риска "
                             "акта ({level}): низкий 430, умеренный 300, высокий 130.",
                       "uz": "500 dan {score} ball — {code} sinf ({label}). Xavf bali yoʻq — dalolatnomadagi xavf "

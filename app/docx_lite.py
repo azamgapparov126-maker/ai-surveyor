@@ -69,10 +69,17 @@ def _para(text, *, bold=False, size=None, color=None, before=0, after=120, inden
 
 
 class Docx:
-    def __init__(self, lang: str = "ru-RU", font: str = "Arial"):
+    def __init__(self, lang: str = "ru-RU", font: str = "Arial", margin: int = 1134, base_size: int = 21,
+                 line: int = 264):
+        """margin — поля страницы в twip (1134 = 2 см, 850 = 15 мм); base_size — шрифт по умолчанию в полупунктах
+        (21 = 10,5 pt); line — межстрочный интервал (240 = одинарный). Ширина текста — self.text_width."""
         self.parts = []
         self.lang = lang
         self.font = font
+        self.margin = int(margin)
+        self.base_size = int(base_size)
+        self.line = int(line)
+        self.text_width = 11906 - 2 * self.margin
         self.media = []                    # [(имя файла в word/media, байты PNG, rId)]
 
     # ---------- блоки ----------
@@ -164,15 +171,17 @@ class Docx:
         return (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W_NS} {PIC_NS}><w:body>'
                 + "".join(self.parts) +
                 '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
-                '<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" '
-                'w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>')
+                f'<w:pgMar w:top="{self.margin}" w:right="{self.margin}" w:bottom="{self.margin}" '
+                f'w:left="{self.margin}" w:header="{min(708, self.margin // 2)}" '
+                f'w:footer="{min(708, self.margin // 2)}" w:gutter="0"/></w:sectPr></w:body></w:document>')
 
     def to_bytes(self) -> bytes:
         f = clean(self.font)
         styles = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles {W_NS}><w:docDefaults>'
                   f'<w:rPrDefault><w:rPr><w:rFonts w:ascii="{f}" w:hAnsi="{f}" w:cs="{f}" w:eastAsia="{f}"/>'
-                  f'<w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="{clean(self.lang)}"/></w:rPr></w:rPrDefault>'
-                  '<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="264" w:lineRule="auto"/></w:pPr>'
+                  f'<w:sz w:val="{self.base_size}"/><w:szCs w:val="{self.base_size}"/>'
+                  f'<w:lang w:val="{clean(self.lang)}"/></w:rPr></w:rPrDefault>'
+                  f'<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="{self.line}" w:lineRule="auto"/></w:pPr>'
                   '</w:pPrDefault></w:docDefaults></w:styles>')
         types = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                  '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'

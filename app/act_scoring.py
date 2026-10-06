@@ -72,6 +72,10 @@ def _components(S: dict, lang: str) -> list:
         elif code == "risk_score":
             label = t("sc_comp_risk", lang)
             why = f"500 − 5 × {_n(c['risk_points'], lang)} {_eq(S)} {c['points']}"
+        elif code == "damages":
+            label = t("sc_comp_dmg", lang)
+            why = t("sc_comp_dmg_why", lang, n=c.get("n") or 0, sev=t("dmg_sev_" + (c.get("severity") or "major"), lang),
+                    pen=-int(c["points"]))
         else:
             label = tx.label(tx.SCORE_COMP_LABELS, code, lang) if code in tx.SCORE_COMP_LABELS else c["label"]
             why = t("sc_comp_why", lang, p=_n(c["risk_points"] or 0, lang), w=_n(c["weight"] or 0, lang, 3),
@@ -302,6 +306,11 @@ def view(D: dict, out: dict, lang: str, meta: dict, borrower: Optional[dict] = N
         text = t("sc_text_level", lang, score=S["score"], code=S["class_code"], label=label,
                  level=tx.label(tx.LEVEL_LABELS, S.get("level") or "moderate", lang))
         method = t("sc_method_level", lang)
+    if S.get("damage_penalty"):
+        # повреждения с фото (06.10.2026): штраф балла — отдельной фразой, класс уже с его учётом
+        text += " " + t("sc_text_dmg", lang, n=S.get("damage_count") or 0,
+                        sev=t("dmg_sev_" + (S.get("damage_severity") or "major"), lang),
+                        before=S.get("score_before_damages"), pen=S["damage_penalty"], score=S["score"])
     parts = []
     for p in S["parts"]:
         parts.append(dict(p, class_label=tx.label(tx.SCORE_BAND_LABELS, p["label_code"], lang),

@@ -8,7 +8,7 @@ from ..act_texts import money, pct, t
 
 from .view_fmt import _li, _money_na, _mult, _pct_na
 from .view_rows import _class_label, _fr_short, _part_label, _part_rate_text, _parts_sc_how, _row, _text, _value_text
-from .view_blocks import _alt_view, _fr_how_text, _fr_text, _franchise_extra, _measures_view, _scenarios_view
+from .view_blocks import _alt_view, _fr_how_text, _fr_text, _franchise_extra, _measures_view, _scenarios_view, scenario_facts
 from .view_analytics import _analytics_view
 
 
@@ -58,7 +58,7 @@ def _parts_view(D: dict, lang: str) -> dict:
               "rate": r, "risk": p["risk"], "franchise": p["franchise"], "analytics": p.get("analytics"),
               "measures": p.get("measures"), "template": p.get("template"), "contract": D.get("contract")}
         rrule = p["risk"]["rule"]
-        minus = lambda x: str(x).replace("-", "−")
+        minus = lambda x: (str(x) if lang == "en" else str(x).replace(".", ",")).replace("-", "−")
         lists.append({"title": t("pt_sub_level", lang, part=lab, level=lvl),
                       "items": [_text(f, lang) for f in p["risk"]["factors"]] +
                       [t("level_rule", lang, net=minus(p["risk"]["net"]), low=minus(rrule["low_max_net"]),
@@ -73,7 +73,7 @@ def _parts_view(D: dict, lang: str) -> dict:
             [_fr_how_text(h, lang) for h in fr.get("how") or []]
         fr_alts = [_alt_view(a, lang) for a in fr.get("alternatives") or []]
         lists.append({"title": t("pt_sub_fr", lang, part=lab), "items": fr_items + [a["text"] for a in fr_alts]})
-        scv = _scenarios_view(p["scenarios"], Dp["must"], lang)
+        scv = _scenarios_view(p["scenarios"], Dp["must"], lang, scenario_facts(Dp))
         sc_items = [f"{x['label']}: {x['value']}" + (f" ({x['note']})" if x.get("note") else "") for x in scv["rows"]]
         lists.append({"title": t("pt_sub_sc", lang, part=lab), "items": sc_items + scv["json"]["how"]})
         try:

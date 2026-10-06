@@ -22,6 +22,7 @@ import re
 from datetime import date
 from typing import Optional
 
+from . import act_engine as ae
 from . import act_extras as ax
 from . import db
 from . import engine
@@ -862,7 +863,8 @@ def fork_data(con, *, cls: str, region: str, group: Optional[str], fs: dict, pro
 
 def build(con, ctx: dict, *, cls: str, product_code: Optional[str], region: str, S: float, V: float,
           term_days: int, rate_res: dict, scen: dict, meas: dict, act_level: str, statutory: bool,
-          th: dict, group: Optional[str] = None, tpl_risks: Optional[list] = None) -> dict:
+          th: dict, group: Optional[str] = None, tpl_risks: Optional[list] = None,
+          veh_group: Optional[str] = None) -> dict:
     """
     Аналитика раздела 4: коды и числа (язык не важен). Каждый блок считается отдельно — сбой одного не роняет
     остальные (блок получает available = false, reason = error). Без старого движка — available = false.
@@ -893,6 +895,10 @@ def build(con, ctx: dict, *, cls: str, product_code: Optional[str], region: str,
             return dict(default, available=False, reason="error")
 
     rows = safe("factors", lambda: {"items": factors(ref, inp, r, sources, S, term)}, {"items": []})["items"]
+    # подгруппа транспорта (06.10.2026): не заданные факторы чужой подгруппы (площадка и моточасы спецтехники у
+    # легкового, «допущенные водители» у крана) не показываются, не советуются и не уточняются; вклад их — 0
+    if veh_group:
+        rows = [x for x in rows if x["status"] != "not_set" or ae.vehicle_factor_applies(x["factor"], veh_group)]
     sens = safe("sensitivity", lambda: {"items": sensitivity(ref, inp, rows, rate_res, S, term, statutory)},
                 {"items": []})["items"]
     mk = safe("market", lambda: market(con, cls, product_code, region, rate_res.get("applied_pct"),

@@ -22,7 +22,8 @@ from .view_fmt import ROWS_BY_GROUP
 from .documents import _borrower_block, _trust_credit
 from .terms import credit_rule, _policyholder, _trust_doc, trust_sources
 from .market import fx_verify
-from .calc import (_analytics_block, _annual_view, _below_min_block, _below_min_decision, _doc_checks, _fork_finish,
+from .calc import (veh_measure_codes,
+    _analytics_block, _annual_view, _below_min_block, _below_min_decision, _doc_checks, _fork_finish,
     _fork_prepare, _kind_from_text, _location_from_text, _min_block, _min_how, _min_info, _napp_settings,
     _net_calibrated, _no_products_rate, _region_scope_stats, _template_block, _with_clauses)
 from .build_parts import _apply_objects, _apply_parts
@@ -121,7 +122,12 @@ def _object_in(con, B) -> None:
     views_req = ctpl.for_group(tpl.get("required_views"), group)
     if views_req is None:
         views_req = ae.required_views(group)
+    # подгруппа транспорта класса 3 (06.10.2026): поле класса veh_group → вид объекта → категория с фото → описание
+    # и название продукта → по умолчанию легковой; по ней — мероприятия шаблона, советы и сценарии словами
+    veh_group = ae.vehicle_group(cls, o.get("class_fields"), kind, upload.get("vehicle_category"), group_ra,
+                                 text=f"{obj_text} {o.get('object_type') or ''} {(product or {}).get('name') or ''}")
     B.group, B.group_ra, B.kind, B.kind_ra, B.kind_type = group, group_ra, kind, kind_ra, kind_type
+    B.veh_group = veh_group
     B.obj_text = obj_text
     B.otype, B.otype_ra, B.special_product, B.tpl, B.tpl_row = otype, otype_ra, special_product, tpl, tpl_row
     B.views_req = views_req
@@ -276,7 +282,7 @@ def _modules_in(con, B) -> None:
     try:
         meas = ax.measures(con, ctx, rate_res, cls=cls, group=group_ra, kind=kind_ra, S=m["sum_insured"],
                            V=m["object_value"], o=o, location=location, statutory=statutory, th=th,
-                           premium=premium_final, codes=ctpl.for_group(tpl.get("measures"), group_ra))
+                           premium=premium_final, codes=veh_measure_codes(tpl, B.veh_group, group_ra))
     except Exception as e:
         block_errors.append({"block": "measures", "error": type(e).__name__})
         meas = {"items": [], "total": {"count": 0}, "error": type(e).__name__}
@@ -297,7 +303,7 @@ def _modules_in(con, B) -> None:
     else:
         analytics = _analytics_block(con, ctx, cls, m.get("product_code"), region_ra, m["sum_insured"],
                                      m["object_value"], term, rate_res, scen, meas, risk["level"], statutory, th,
-                                     group_ra, tpl_risks, block_errors)
+                                     group_ra, tpl_risks, block_errors, veh_group=B.veh_group)
         _napp_settings(analytics, fs, st)
         _region_scope_stats(analytics, region_scope(m))
     analytics["activity"] = (ctx.get("must") or {}).get("activity") if ctx.get("ok") else None
@@ -408,6 +414,8 @@ def _assemble(con, B) -> None:
         "sources_downgraded": B.downgraded,
         "optional": {k: v for k, v in B.o.items() if v is not None},
         "group": B.group, "object_kind": B.kind, "object_type_ref": B.otype,
+        # подгруппа транспорта класса 3 (06.10.2026); у других классов — None
+        "veh_group": B.veh_group,
         "recognized": B.recognized, "inspection": B.inspection, "risk": B.risk, "rate": B.rate_res,
         "value": B.value, "franchise": B.fr, "clauses": B.clauses, "discrepancies": B.disc, "decision": B.dec,
         "missing": B.missing, "tariff_version_id": tariff_version(con, "регулятор" if B.statutory else "компания"),
@@ -517,7 +525,7 @@ def _finish_objects(con, B) -> None:
              # для пересчёта мероприятий от премии договора по объектам
              "ctx": B.ctx, "group_ra": B.group_ra, "kind_ra": B.kind_ra, "location": B.location,
              "statutory": B.statutory,
-             "th": B.th, "meas_codes": ctpl.for_group(B.tpl.get("measures"), B.group_ra)}
+             "th": B.th, "meas_codes": veh_measure_codes(B.tpl, B.veh_group, B.group_ra)}
         _apply_objects(con, B.clean, B.D, X)
     else:
         B.D["objects"], B.D["objects_total"] = [], None

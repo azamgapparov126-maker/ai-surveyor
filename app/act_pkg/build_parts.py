@@ -12,7 +12,8 @@ from .common import clause_catalog
 from .recognize import preferred
 from .regions import region_for_stats, region_scope
 from .terms import credit_rule, _policyholder
-from .calc import (_analytics_block, _annual_view, _doc_checks, _fork_finish, _fork_prepare, _kind_from_text, _min_how,
+from .calc import (veh_measure_codes,
+    _analytics_block, _annual_view, _doc_checks, _fork_finish, _fork_prepare, _kind_from_text, _min_how,
     _napp_settings, _no_products_rate, _region_scope_stats, _template_block)
 
 
@@ -131,6 +132,9 @@ def _part_calc(con, P: dict, idx: int, C: dict) -> dict:
     otype_ra = otype or ae.match_object_type(ref, cls, (tx.OBJECT_KINDS.get(kind_ra) or (None,))[0], None)
     special = "спецтехник" in str((product or {}).get("name") or "").lower()
     group_ra = "special" if group == "vehicle" and special else group
+    # подгруппа транспорта части класса 3 (06.10.2026): мероприятия по подгруппе, как у однопродуктового акта
+    veh_group = ae.vehicle_group(cls, op.get("class_fields"), kind, None, group_ra,
+                                 text=f"{obj_text} {op.get('object_type') or ''} {(product or {}).get('name') or ''}")
     y = op.get("year") if op.get("year") is not None else (C["y"] if main else None)
     location = op.get("location") or (C["location"] if main else None)
     S, V = float(P["sum_insured"]), float(P["object_value"])
@@ -178,7 +182,7 @@ def _part_calc(con, P: dict, idx: int, C: dict) -> dict:
     try:
         meas = ax.measures(con, ctx, rate_res, cls=cls, group=group_ra, kind=kind_ra, S=S, V=V, o=op,
                            location=location, statutory=statutory, th=th, premium=premium_final,
-                           codes=ctpl.for_group(tpl.get("measures"), group_ra))
+                           codes=veh_measure_codes(tpl, veh_group, group_ra))
     except Exception as e:
         errs.append({"block": f"part{idx}:measures", "error": type(e).__name__})
         meas = {"items": [], "total": {"count": 0}, "error": type(e).__name__}

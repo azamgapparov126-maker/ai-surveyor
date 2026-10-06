@@ -1632,6 +1632,8 @@ def _when_ok(when: dict, facts: dict) -> bool:
         return any(_when_ok(w, facts) for w in when["any_of"])
     if "location" in when and facts.get("location") not in when["location"]:
         return False
+    if "location_not" in when and facts.get("location") in when["location_not"]:
+        return False                       # гараж, охраняемая стоянка — совет про стоянку не нужен
     if when.get("not_guarded") and facts.get("guard"):
         return False
     if "kinds" in when and facts.get("kind") not in when["kinds"]:

@@ -334,7 +334,11 @@ def _recognized_opts_in(body: dict, clean: dict, errs: dict) -> None:
                     continue
                 what, where = _s(d.get("what"), 160), _s(d.get("where"), 80)
                 if what and not llm.has_pd(what) and not (where and llm.has_pd(where)):
-                    clean["damages"].append({"what": what, "where": where, "file": _s(d.get("file"), 10)})
+                    item = {"what": what, "where": where, "file": _s(d.get("file"), 10)}
+                    sev = str(d.get("severity") or "").strip().lower()
+                    if sev in ("cosmetic", "major"):
+                        item["severity"] = sev      # тяжесть повреждения (06.10.2026): косметические / существенные
+                    clean["damages"].append(item)
     clean["session"] = _s(body.get("session"), 40)
 
 

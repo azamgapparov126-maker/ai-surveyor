@@ -80,12 +80,12 @@ def _text(item: dict, lang: str) -> str:
     return t(item["code"], lang, **params)
 
 
-def _check_text(c: dict, lang: str, group: Optional[str] = None) -> str:
+def _check_text(c: dict, lang: str, group: Optional[str] = None, veh_group: Optional[str] = None) -> str:
     p = c.get("params") or {}
     if c["code"] == "c_disc":
         return t("c_disc", lang, label=tx.field_label(p["key"], lang, group))
     if c["code"] == "c_views":
-        return t("c_views", lang, views=", ".join(tx.label(tx.VIEW_LABELS, v, lang) for v in p["views"]))
+        return t("c_views", lang, views=", ".join(tx.view_label(v, lang, veh_group) for v in p["views"]))
     if c["code"] == "c_missing":
         return t("c_missing", lang, what=", ".join(tx.field_label(k, lang, group).lower() for k in p["keys"]))
     if c["code"].startswith("c_market_"):

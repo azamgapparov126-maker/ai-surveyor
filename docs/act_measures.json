@@ -1,7 +1,7 @@
 {
-  "version": "2026-10-01",
+  "version": "2026-10-06",
   "calibrated": 0,
-  "note": "Рекомендации страхователю (предупредительные мероприятия) для сюрвейерского акта. Раздел translations — переводы мероприятий таблицы preventive_measures (русский текст берётся из базы). Раздел catalog — экспертные мероприятия для групп, которых в таблице нет (спецтехника, транспорт, оборудование, грузы) и дополнения для зданий и складов. effect — какой коэффициент справочника меняет мероприятие; эффект на премию считает движок (engine.rate_for), все эффекты экспертные (calibrated = 0). Условия when: location — места эксплуатации, где мероприятие нужно; not_guarded — только если охрана не подтверждена; kinds — виды объекта; classes — классы; protection_not — код защиты, при котором мероприятие не нужно; protection_unknown — только если защита не указана; losses_min — убытков за 3 года не меньше; any_of — хватает одного из условий. Читает app/act_extras.py; код не меняется при правке файла. Мероприятия с пустым groups (30.09.2026) — экспертные мероприятия шаблонов классов 1, 2, 4–6, 10–17 (docs/act_class_templates.json): их выбирает только шаблон класса по коду, без шаблона они не показываются.",
+  "note": "Рекомендации страхователю (предупредительные мероприятия) для сюрвейерского акта. Раздел translations — переводы мероприятий таблицы preventive_measures (русский текст берётся из базы). Раздел catalog — экспертные мероприятия для групп, которых в таблице нет (спецтехника, транспорт, оборудование, грузы) и дополнения для зданий и складов. effect — какой коэффициент справочника меняет мероприятие; эффект на премию считает движок (engine.rate_for), все эффекты экспертные (calibrated = 0). Условия when: location — места эксплуатации, где мероприятие нужно; not_guarded — только если охрана не подтверждена; location_not — места, где мероприятие не нужно (гараж, охраняемая стоянка); kinds — виды объекта; classes — классы; protection_not — код защиты, при котором мероприятие не нужно; protection_unknown — только если защита не указана; losses_min — убытков за 3 года не меньше; any_of — хватает одного из условий. Читает app/act_extras.py; код не меняется при правке файла. Мероприятия с пустым groups (30.09.2026) — экспертные мероприятия шаблонов классов 1, 2, 4–6, 10–17 (docs/act_class_templates.json): их выбирает только шаблон класса по коду, без шаблона они не показываются. Мероприятия класса 3 по подгруппам транспорта (06.10.2026): vh_car_* — легковые, vh_truck_* — грузовые и автобусы, vh_trailer_* — прицепы, vh_moto_* — мотоциклы; спецтехника — прежние sp_*. Подгруппу выбирает шаблон класса 3 (measures по коду подгруппы).",
   "translations": {
     "alarm_install": {
       "uz": {
@@ -1304,6 +1304,256 @@
       "en": {
         "text": "Photograph the field at key growth stages (emergence, flowering, before harvest)",
         "why": "Stage photos prove the crop condition before the insured event."
+      }
+    },
+    {
+      "code": "vh_car_parking",
+      "groups": [],
+      "when": {
+        "not_guarded": true,
+        "location_not": [
+          "closed_storage",
+          "guarded"
+        ]
+      },
+      "deadline_days": 30,
+      "ru": {
+        "text": "Ночью ставить автомобиль на охраняемую стоянку или в гараж",
+        "why": "Ночная стоянка у дома без охраны — основное условие угона и повреждений легкового автомобиля."
+      },
+      "uz": {
+        "text": "Tunda avtomobilni qoʻriqlanadigan turargohga yoki garajga qoʻyish",
+        "why": "Uy yonidagi qoʻriqsiz tungi turargoh — yengil avtomobilni oʻgʻirlash va shikastlashning asosiy sharti."
+      },
+      "en": {
+        "text": "Park the car overnight in a guarded car park or a garage",
+        "why": "Unguarded overnight parking near home is the main condition for theft of and damage to a car."
+      }
+    },
+    {
+      "code": "vh_car_antitheft",
+      "groups": [],
+      "when": {
+        "protection_not": [
+          "tracker"
+        ]
+      },
+      "effect": {
+        "class": "3",
+        "factor": "antitheft",
+        "option": "tracker"
+      },
+      "deadline_days": 30,
+      "ru": {
+        "text": "Установить иммобилайзер и скрытую GPS-метку",
+        "why": "Угон — самый дорогой убыток по легковому автомобилю; GPS-метка помогает найти машину."
+      },
+      "uz": {
+        "text": "Immobilayzer va yashirin GPS-belgi oʻrnatish",
+        "why": "Oʻgʻirlash — yengil avtomobil boʻyicha eng qimmat zarar; GPS-belgi mashinani topishga yordam beradi."
+      },
+      "en": {
+        "text": "Fit an immobiliser and a hidden GPS tag",
+        "why": "Theft is the most expensive loss for a car; a GPS tag helps to find the car."
+      }
+    },
+    {
+      "code": "vh_car_drivers",
+      "groups": [],
+      "when": {},
+      "effect": {
+        "class": "3",
+        "factor": "drivers",
+        "option": "limited"
+      },
+      "deadline_days": 30,
+      "ru": {
+        "text": "Ограничить круг водителей: стаж не меньше трёх лет, без лишения прав",
+        "why": "Молодые и неопытные водители чаще попадают в ДТП."
+      },
+      "uz": {
+        "text": "Haydovchilar doirasini cheklash: staji kamida uch yil, guvohnomadan mahrum qilinmagan",
+        "why": "Yosh va tajribasiz haydovchilar YTHga koʻproq tushadi."
+      },
+      "en": {
+        "text": "Limit the list of drivers: at least three years of experience, no licence suspensions",
+        "why": "Young and inexperienced drivers are involved in accidents more often."
+      }
+    },
+    {
+      "code": "vh_car_marking",
+      "groups": [],
+      "when": {},
+      "deadline_days": 30,
+      "ru": {
+        "text": "Нанести противоугонную маркировку VIN на стёкла и основные детали",
+        "why": "Маркированную машину труднее продать по частям — её реже угоняют."
+      },
+      "uz": {
+        "text": "Oynalar va asosiy detallarga oʻgʻirlikka qarshi VIN belgisini tushirish",
+        "why": "Belgilangan mashinani qismlarga boʻlib sotish qiyin — u kamroq oʻgʻirlanadi."
+      },
+      "en": {
+        "text": "Etch the VIN on the windows and main parts as anti-theft marking",
+        "why": "A marked car is harder to sell for parts, so it is stolen less often."
+      }
+    },
+    {
+      "code": "vh_car_dashcam",
+      "groups": [],
+      "when": {},
+      "deadline_days": 30,
+      "ru": {
+        "text": "Установить видеорегистратор с записью стоянки",
+        "why": "Запись помогает установить виновника ДТП и обстоятельства повреждения на стоянке."
+      },
+      "uz": {
+        "text": "Turargoh rejimida yozib oluvchi videoregistrator oʻrnatish",
+        "why": "Yozuv YTH aybdorini va turargohdagi shikastlanish holatlarini aniqlashga yordam beradi."
+      },
+      "en": {
+        "text": "Fit a dashcam with parking mode",
+        "why": "The recording helps to establish who caused an accident and how damage happened while parked."
+      }
+    },
+    {
+      "code": "vh_truck_parking",
+      "groups": [],
+      "when": {
+        "not_guarded": true,
+        "location_not": [
+          "closed_storage",
+          "guarded"
+        ]
+      },
+      "deadline_days": 30,
+      "ru": {
+        "text": "Ставить машину на охраняемую стоянку или базу перевозчика между рейсами и ночью",
+        "why": "Кража груза, топлива и самой машины чаще всего происходит на неохраняемых стоянках."
+      },
+      "uz": {
+        "text": "Reyslar oraligʻida va tunda mashinani qoʻriqlanadigan turargohga yoki tashuvchi bazasiga qoʻyish",
+        "why": "Yuk, yoqilgʻi va mashinaning oʻzi koʻpincha qoʻriqsiz turargohlarda oʻgʻirlanadi."
+      },
+      "en": {
+        "text": "Keep the vehicle in a guarded car park or the carrier's depot between trips and overnight",
+        "why": "Theft of cargo, fuel and the vehicle itself mostly happens in unguarded parking areas."
+      }
+    },
+    {
+      "code": "vh_truck_tacho",
+      "groups": [],
+      "when": {},
+      "deadline_days": 30,
+      "ru": {
+        "text": "Вести тахограф и контролировать режим труда и отдыха водителей",
+        "why": "Усталость водителя на дальних рейсах — частая причина тяжёлых ДТП."
+      },
+      "uz": {
+        "text": "Taxograf yuritish va haydovchilarning mehnat va dam olish rejimini nazorat qilish",
+        "why": "Uzoq reyslarda haydovchining charchashi — ogʻir YTHlarning tez-tez uchraydigan sababi."
+      },
+      "en": {
+        "text": "Use a tachograph and monitor drivers' working and rest hours",
+        "why": "Driver fatigue on long trips is a frequent cause of serious accidents."
+      }
+    },
+    {
+      "code": "vh_truck_gps",
+      "groups": [],
+      "when": {
+        "protection_not": [
+          "tracker"
+        ]
+      },
+      "effect": {
+        "class": "3",
+        "factor": "antitheft",
+        "option": "tracker"
+      },
+      "deadline_days": 30,
+      "ru": {
+        "text": "Установить GPS-мониторинг с контролем маршрута и стоянок",
+        "why": "Мониторинг помогает найти угнанную машину и пресечь отклонение от маршрута."
+      },
+      "uz": {
+        "text": "Marshrut va toʻxtash joylari nazorati bilan GPS-monitoring oʻrnatish",
+        "why": "Monitoring oʻgʻirlangan mashinani topishga va marshrutdan chetga chiqishni toʻxtatishga yordam beradi."
+      },
+      "en": {
+        "text": "Install GPS monitoring with route and stop control",
+        "why": "Monitoring helps to find a stolen vehicle and stop deviations from the route."
+      }
+    },
+    {
+      "code": "vh_truck_drivers",
+      "groups": [],
+      "when": {},
+      "effect": {
+        "class": "3",
+        "factor": "drivers",
+        "option": "limited"
+      },
+      "deadline_days": 30,
+      "ru": {
+        "text": "Допускать к рейсам только штатных водителей с категорией и стажем не меньше трёх лет, вести журнал допуска",
+        "why": "Случайный или неопытный водитель тяжёлой машины — частая причина крупных ДТП."
+      },
+      "uz": {
+        "text": "Reyslarga faqat toifasi va kamida uch yillik staji bor shtatdagi haydovchilarni qoʻyish, ruxsat jurnalini yuritish",
+        "why": "Ogʻir mashinaning tasodifiy yoki tajribasiz haydovchisi — yirik YTHlarning tez-tez sababi."
+      },
+      "en": {
+        "text": "Allow only staff drivers with the right category and at least three years of experience, keep a permit log",
+        "why": "A casual or inexperienced driver of a heavy vehicle is a frequent cause of major accidents."
+      }
+    },
+    {
+      "code": "vh_trailer_parking",
+      "groups": [],
+      "when": {
+        "not_guarded": true,
+        "location_not": [
+          "closed_storage",
+          "guarded"
+        ]
+      },
+      "deadline_days": 30,
+      "ru": {
+        "text": "Отцепленный прицеп оставлять только на охраняемой площадке с замком на сцепное устройство",
+        "why": "Отцепленный прицеп без охраны угоняют любым тягачом."
+      },
+      "uz": {
+        "text": "Ajratilgan tirkamani faqat tirkash moslamasiga qulf bilan qoʻriqlanadigan maydonda qoldirish",
+        "why": "Qoʻriqsiz ajratilgan tirkamani istalgan tyagach bilan olib ketish mumkin."
+      },
+      "en": {
+        "text": "Leave an uncoupled trailer only on a guarded site with a coupling lock",
+        "why": "An unguarded uncoupled trailer can be taken away by any tractor unit."
+      }
+    },
+    {
+      "code": "vh_moto_parking",
+      "groups": [],
+      "when": {
+        "not_guarded": true,
+        "location_not": [
+          "closed_storage",
+          "guarded"
+        ]
+      },
+      "deadline_days": 30,
+      "ru": {
+        "text": "Хранить мотоцикл в гараже или на охраняемой стоянке, на улице — с противоугонным замком на колесо",
+        "why": "Мотоцикл без замка уносят или увозят за минуты."
+      },
+      "uz": {
+        "text": "Mototsiklni garajda yoki qoʻriqlanadigan turargohda saqlash, koʻchada — gʻildirakka oʻgʻirlikka qarshi qulf bilan",
+        "why": "Qulfsiz mototsiklni bir necha daqiqada olib ketishadi."
+      },
+      "en": {
+        "text": "Keep the motorcycle in a garage or a guarded car park, and on the street use a wheel lock",
+        "why": "A motorcycle without a lock is carried or driven away within minutes."
       }
     }
   ]

@@ -91,7 +91,7 @@ SCHEMA_HINT = (
     '"fuel_why": "коротко, что видно", "file": 1}, '
     '"fields": [{"key": "ключ", "value": "значение", "source": "photo|plate|document|marking", '
     '"file": 1, "note": "строка или null"}], '
-    '"damages": [{"what": "что повреждено", "where": "где", "file": 1}], '
+    '"damages": [{"what": "что повреждено", "where": "где", "severity": "cosmetic|major", "file": 1}], '
     '"branch_request": null или {"file": 1, ' + ", ".join(
         f'"{c}": "строка как в документе или null"' for c in br.ROW_CODES if c not in br.PARTY_CODES) +
     ', "policyholder": {"is_legal": true, "name": "название организации или null"}, '
@@ -147,7 +147,9 @@ def model_prompt(n: int, lang: str, credit_scan: bool = False) -> str:
             f"для каждого файла укажи ракурс (view). {FIELD_HINTS} "
             f"описания (object_type, location, damages, note, document_kind) пиши на {LANG_NAME[lang]} языке "
             f"строчными буквами; марки, модели, номера и единицы — как написано на объекте. "
-            f"видимые повреждения перечисли в damages; если повреждений не видно — пустой список. "
+            f"видимые повреждения перечисли в damages; если повреждений не видно — пустой список; "
+            f"severity: cosmetic — царапины, сколы, потёртости краски; major — вмятины, трещины, деформация, "
+            f"коррозия, разбитые или отсутствующие детали. "
             f"перевод описания объекта из запроса филиала (object_description_translated) — на {LANG_NAME[lang]} "
             f"языке; если запроса филиала нет — branch_request = null. {VEHICLE_HINT} "
             f"пояснения why и fuel_why — на {LANG_NAME[lang]} языке. {CONTRACT_HINT} "
@@ -323,7 +325,11 @@ def parse_model(text: str, n: int, inclusive: bool = True) -> Optional[dict]:
             fi = fi if 1 <= fi <= n else None
         except (TypeError, ValueError):
             fi = None
-        damages.append({"what": what, "where": where, "file": fi})
+        item = {"what": what, "where": where, "file": fi}
+        sev = str(d.get("severity") or "").strip().lower()
+        if sev in ("cosmetic", "major"):
+            item["severity"] = sev          # тяжесть модели; нет — по словам описания (act_engine.damage_severity)
+        damages.append(item)
     kind = str(data.get("object_kind") or "").strip().lower()
     hint = str(data.get("class_hint") or "").strip().lower()
     cond = str(data.get("condition") or "").strip().lower()

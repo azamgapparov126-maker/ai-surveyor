@@ -72,6 +72,17 @@ def field_label(key: str, lang: str, obj_group: str = None) -> str:
     return label(FIELD_LABELS, key, lang)
 
 
+ROAD_VEH_GROUPS = ("car", "truck", "bus", "trailer", "moto")
+
+
+def view_label(code: str, lang: str, veh_group: str = None) -> str:
+    """Подпись ракурса; у дорожного транспорта (легковые, грузовые, автобусы) счётчик — «счётчик пробега»,
+    без «моточасов» спецтехники (06.10.2026)."""
+    if code == "odometer" and veh_group in ROAD_VEH_GROUPS:
+        return t("view_odometer_road", lang)
+    return label(VIEW_LABELS, code, lang)
+
+
 def pct_fixed(x, lang: str = "ru", digits: int = 1) -> str:
     """Процент с заданным числом знаков после запятой — для рядом стоящих чисел (сценарии убытка)."""
     if x is None:
@@ -125,7 +136,7 @@ def count_text(n, word: str, lang: str = "ru", digits: int = 0) -> str:
 # --------------------------------------------------------------------------- #
 #  Тексты по темам: подписи — именами модулей, TX — склейкой блоков ниже
 # --------------------------------------------------------------------------- #
-from . import below_min, docs, factors, fork, market, misc, rate, scenarios, sections, stats  # noqa: E402
+from . import below_min, compact, docs, factors, fork, market, misc, rate, scenarios, sections, stats  # noqa: E402
 from .docs import _ct_from_rq  # noqa: E402,F401
 from .sections import (  # noqa: E402,F401
     FIELD_LABELS,
@@ -214,6 +225,7 @@ for _block in (docs.TX_CONTRACT,
                factors.TX_TERRITORY,
                misc.TX_OBJECTS,
                misc.TX_OBJECTS_SRC,
-               misc.TX_PREFILL):
+               misc.TX_PREFILL,
+               compact.TX_COMPACT):
     TX.update(_block)
 del _block
