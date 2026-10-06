@@ -411,6 +411,30 @@ def act_scoring_png(request: Request, aid: str, lang: str = ""):
 router.add_api_route("/act/{aid}/send", act_send, methods=["POST"])
 
 
+@router.get("/admin/acts")
+def admin_acts(request: Request, limit: int = 30):
+    """Последние акты для администратора: id, дата, продукт, объект, язык, без содержимого (guard: /admin — только админ)."""
+    limit = max(1, min(int(limit or 30), 200))
+    with db.tx() as con:
+        ensure_tables(con)
+        rows = db.rows(con, "SELECT id, lang, created_at, expires_at, act_json FROM acts ORDER BY created_at DESC LIMIT ?", limit)
+    items = []
+    for r in rows:
+        try:
+            D = json.loads(r["act_json"]) or {}
+        except Exception:
+            D = {}
+        must = D.get("must") or {}
+        obj = D.get("object") or {}
+        items.append({"id": r["id"], "lang": r["lang"], "created_at": r["created_at"], "expires_at": r["expires_at"],
+                      "product_code": must.get("product_code") or D.get("product_code"),
+                      "class_code": D.get("class_code") or (D.get("template") or {}).get("class_code"),
+                      "object": str(obj.get("label") or obj.get("kind_label") or D.get("object_kind") or "")[:80],
+                      "sum_insured": must.get("sum_insured"), "premium": (D.get("premium") or {}).get("amount"),
+                      "objects": len(D.get("objects") or []), "files": len(D.get("files") or [])})
+    return _reply(request, {"ok": True, "count": len(items), "items": items})
+
+
 @router.get("/act/{aid}")
 def act_get(request: Request, aid: str, lang: str = ""):
     """Свой акт (JSON) на языке ?lang= из сохранённого снимка, без пересчёта; чужой — 404."""
