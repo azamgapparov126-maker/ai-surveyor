@@ -203,7 +203,7 @@ def check_cobalt():
        and r["settings"]["version"] == "1.0" and r["settings"]["date"] == "2026-10-13" and r["calibrated"] == 0, r)
     ok("ссылки на объявления и на страницы выдачи",
        all(a["url"].startswith("https://avtoelon.uz/a/show/") for a in r["analogs"])
-       and r["source"]["urls"][0] == "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022")
+       and r["source"]["urls"][0] == "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022")
     ok("курс в расчёте и пометка о старом курсе",
        r["fx"]["rate"] == RATE and any("курс доллара старше 7 дней" in w for w in r["warnings"]))
     # пробег и состояние
