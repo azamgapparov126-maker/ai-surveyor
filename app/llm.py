@@ -273,10 +273,44 @@ NAME_CYR = re.compile(rf"\b{_CYR_WORD}(?:{_SP}{_CYR_WORD}){{1,3}}\b")
 NAME_LAT = re.compile(rf"\b{_LAT_WORD}(?:{_SP}{_LAT_WORD}){{1,3}}\b")
 
 
+# Марки ТС и техники латиницей: «Chevrolet Cobalt 2022» — описание объекта, а не ФИО. Слова, которые бывают
+# именами или фамилиями (John, Li, Man, Holland, Case, Land), сюда намеренно не входят.
+LAT_BRANDS = {
+    "chevrolet", "daewoo", "ravon", "lada", "kia", "hyundai", "toyota", "lexus", "nissan", "honda", "mazda",
+    "mitsubishi", "subaru", "suzuki", "isuzu", "mercedes", "benz", "bmw", "audi", "volkswagen", "skoda", "opel",
+    "ford", "renault", "peugeot", "citroen", "volvo", "porsche", "byd", "chery", "geely", "haval", "jac", "changan",
+    "jetour", "exeed", "tesla", "zeekr", "faw", "dongfeng", "foton", "howo", "sinotruk", "shacman", "kamaz",
+    "scania", "daf", "iveco", "maz", "gaz", "uaz", "jeep", "dodge", "rover", "cadillac", "infiniti", "caterpillar",
+    "komatsu", "hitachi", "liebherr", "jcb", "hyster", "claas", "deere", "kubota", "sany", "xcmg", "zoomlion",
+    "shantui", "lonking", "liugong", "doosan", "yutong", "higer", "otokoch", "samand", "matiz", "nexia", "spark",
+    "cobalt", "lacetti", "gentra", "malibu", "captiva", "tracker", "equinox", "tahoe", "damas", "labo", "onix",
+    "monza", "camry", "corolla", "sonata", "elantra", "tucson", "sportage", "sorento", "solaris", "cerato",
+    "optima", "largus", "vesta", "granta", "niva",
+}
+# слова рядом, по которым видно, что перед нами ТС, а не человек
+_VEHICLE_CTX = re.compile(r"(?i)(легков|грузов|автомоб|машин|марк|модел|\bтс\b|спецтехник|тягач|прицеп|автобус|"
+                          r"трактор|погрузчик|экскаватор|\bcar\b|vehicle|avto|mashina)")
+_YEAR_AFTER = re.compile(r"^[^\S\r\n]*,?[^\S\r\n]*(?:19[5-9]\d|20[0-4]\d)(?!\d)")
+
+
+def _lat_not_person(m) -> bool:
+    """Латинские слова с заглавной — не ФИО: есть известная марка ТС или техники; либо два слова, сразу за ними
+    год выпуска (1950–2049) и рядом слово «легковой», «автомобиль», «модель» и т. п."""
+    words = [w.lower().strip(".,") for w in m.group(0).split()]
+    if any(w in LAT_BRANDS for w in words):
+        return True
+    if len(words) == 2 and _YEAR_AFTER.match(m.string[m.end():]):
+        around = m.string[max(0, m.start() - 40):m.end() + 40]
+        return bool(_VEHICLE_CTX.search(around))
+    return False
+
+
 def _mask_names(text: str) -> str:
     def repl(m, stop):
         words = m.group(0).split()
         if any(w.lower().strip(".,") in stop for w in words):
+            return m.group(0)
+        if stop is LAT_STOP and _lat_not_person(m):
             return m.group(0)
         return "[ФИО]"
     text = NAME_INITIALS.sub("[ФИО]", text)

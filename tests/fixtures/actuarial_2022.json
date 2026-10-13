@@ -1,0 +1,95 @@
+{
+ "year": 2022,
+ "unit": "млн сум",
+ "source": "Актуарный отчёт INSON за 2022 год, стр. 8, 14–39 — разобранные цифры по субпортфелям (без реквизитов, подписей и ФИО)",
+ "made": "2026-10-13, app/actuarial.parse_2022 по тексту отчёта; сверка сумм пройдена",
+ "pages": "8, 14–39",
+ "totals": {
+  "premium_written": 93391.53,
+  "premium_earned": 73566.68,
+  "payouts": 11302.42,
+  "expenses": 47583.04
+ },
+ "items": {
+  "vehicle": {
+   "premium_written": 26038.8,
+   "premium_earned": 22051.18,
+   "payouts": 3918.48,
+   "expenses": 13037.73,
+   "expenses_pct": 59.1,
+   "commission_pct": 8.2,
+   "risk_margin": 1629.7,
+   "load_L": 0.591
+  },
+  "property": {
+   "premium_written": 9923.99,
+   "premium_earned": 9063.76,
+   "payouts": 111.73,
+   "expenses": 6610.11,
+   "expenses_pct": 72.9,
+   "commission_pct": 10.5,
+   "risk_margin": 143.6,
+   "load_L": 0.729
+  },
+  "financial": {
+   "premium_written": 34073.29,
+   "premium_earned": 22499.32,
+   "payouts": 5970.51,
+   "expenses": 14071.3,
+   "expenses_pct": 62.5,
+   "commission_pct": 1.8,
+   "risk_margin": 6595.0,
+   "load_L": 0.625
+  },
+  "aviation": {
+   "premium_written": 12974.58,
+   "premium_earned": 13012.87,
+   "payouts": 0.0,
+   "expenses": 9088.66,
+   "expenses_pct": 69.8,
+   "commission_pct": 0.0,
+   "risk_margin": null,
+   "load_L": 0.698
+  },
+  "liability": {
+   "premium_written": 1510.68,
+   "premium_earned": 1676.06,
+   "payouts": 0.0,
+   "expenses": 1249.99,
+   "expenses_pct": 74.6,
+   "commission_pct": 7.8,
+   "risk_margin": null,
+   "load_L": 0.746
+  },
+  "osgovts": {
+   "premium_written": 3508.82,
+   "premium_earned": 882.44,
+   "payouts": 569.88,
+   "expenses": 481.71,
+   "expenses_pct": 54.6,
+   "commission_pct": 14.0,
+   "risk_margin": 860.4,
+   "load_L": 0.546
+  },
+  "osgor": {
+   "premium_written": 1576.32,
+   "premium_earned": 580.83,
+   "payouts": 196.61,
+   "expenses": 371.32,
+   "expenses_pct": 63.9,
+   "commission_pct": 10.3,
+   "risk_margin": 462.7,
+   "load_L": 0.639
+  },
+  "other": {
+   "premium_written": 3785.06,
+   "premium_earned": 3800.23,
+   "payouts": 535.2,
+   "expenses": 2672.21,
+   "expenses_pct": 70.3,
+   "commission_pct": 3.4,
+   "risk_margin": 272.1,
+   "load_L": 0.703
+  }
+ }
+}

@@ -40,6 +40,10 @@ import sqlite3
 ROOT = Path(__file__).resolve().parent.parent
 ACTIVITIES_CSV = (ROOT / "library" / "05_Методология" /
                   "ОСГОР — классификация видов деятельности и коэффициенты КСТ (ПКМ 177, прил. 9).csv")
+# library/ в репозиторий не входит (.gitignore); копия того же справочника (открытый акт, не ПД) — db/, она есть
+# и в клоне, и в образе сервера (её же читает tools/db_build.py)
+if not ACTIVITIES_CSV.exists():
+    ACTIVITIES_CSV = ROOT / "db" / "osgor_activities.csv"
 
 PRODUCT_CODE = "1323"
 CLASS_CODE = "13"

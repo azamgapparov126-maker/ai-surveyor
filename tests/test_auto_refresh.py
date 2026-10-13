@@ -41,7 +41,7 @@ os.environ.pop("SURVEYOR_DEV", None)
 os.environ["SURVEYOR_NO_BACKGROUND"] = "1"
 os.environ["LEX_LIVE"] = "0"
 
-from tmpdb import temp_db                      # noqa: E402
+from tmpdb import ensure_market_stats, temp_db   # noqa: E402
 from app import auth, background, db, legal     # noqa: E402
 from app import market_expert as mx             # noqa: E402
 from app import market_knowledge as mkn         # noqa: E402
@@ -281,16 +281,37 @@ def check_registry(tmp: Path):
     return base, r
 
 
+def sample_pdf() -> bytes:
+    """
+    PDF конкурента для «скачивания». Оригиналы PDF в репозиторий не входят (.gitignore: library/**/*.pdf) — на чистой
+    машине PDF собирается из текста конкурента (.txt в репозитории) через PyMuPDF (requirements.txt): тот же путь
+    «PDF → текст», только без оригинала.
+    """
+    pdfs = sorted(cf.LOCAL_DIR.rglob("*.pdf"))
+    if pdfs:
+        return pdfs[0].read_bytes()
+    import pymupdf as fitz
+    txts = sorted(p for p in cf.LOCAL_DIR.rglob("*.txt") if "_history" not in p.parts)
+    _, _, body = cf.split_txt(txts[0].read_text(encoding="utf-8")) if txts else ({}, "", "Правила страхования")
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_textbox(fitz.Rect(36, 36, 559, 806), (body or "Правила страхования")[:1500], fontsize=9,
+                        fontname="helv")
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
 def check_versions(tmp: Path, img: Path, reg: dict):
     print("4. «скачанный» документ из локального файла, история версий")
     live = tmp / "library_live" / "Конкуренты"      # как на сервере: STORAGE_DIR/library_live/Конкуренты
     web = FakeWeb()
     sleeps = []
     client = cf.Client(get=web.get, sleep=lambda s: sleeps.append(s))
-    real_pdf = next(p for p in sorted(cf.LOCAL_DIR.rglob("*.pdf")))
+    pdf_bytes = sample_pdf()
     by = {s["document"]: s for s in reg["sources"]}
-    by["Правила"]["orig_sha256"] = hashlib.sha256(real_pdf.read_bytes()).hexdigest()
-    web.pages["https://test-sug.uz/files/rules.pdf"] = (200, "application/pdf", real_pdf.read_bytes())
+    by["Правила"]["orig_sha256"] = hashlib.sha256(pdf_bytes).hexdigest()
+    web.pages["https://test-sug.uz/files/rules.pdf"] = (200, "application/pdf", pdf_bytes)
     pd_line = "Директор Иванов И. И., тел. +998 90 123-45-67, почта ivanov.ii@gmail.com"
     keep_line = "Адрес: г. Ташкент, ул. Амира Темура, 10; колл-центр +998 71 200-00-00; info@test-sug.uz; И. О. руководителя"
     web.pages["https://test-sug.uz/files/offer.docx"] = (200, "application/vnd.openxmlformats", make_docx(
@@ -336,7 +357,7 @@ def check_versions(tmp: Path, img: Path, reg: dict):
         "<a href='/files/pravila-2026.pdf'>Правила страхования имущества (2026)</a>"
         "<a href='/files/report.pdf'>Годовой отчёт</a><a href='https://other.uz/rules.pdf'>Правила</a>"
         "</body></html>").encode())
-    web.pages["https://test-sug.uz/files/pravila-2026.pdf"] = (200, "application/pdf", real_pdf.read_bytes())
+    web.pages["https://test-sug.uz/files/pravila-2026.pdf"] = (200, "application/pdf", pdf_bytes)
     res3 = cf.run(reg, state, live, img, client=client, today=date(2026, 10, 10), log=lambda s: None)
     pg = live / "Тест Сугурта" / "Имущество — страница продукта.txt"
     ok("страница изменилась — новая версия, прежняя в _history",
@@ -461,6 +482,7 @@ def main():
     try:
         with temp_db():
             db.ensure_schema()
+            ensure_market_stats()         # база старше db_build 13.10.2026 — рынок НАПП из data/parsed
             check_knowledge(tmp)
             img, reg = check_registry(tmp)
             live, _ = check_versions(tmp, img, reg)

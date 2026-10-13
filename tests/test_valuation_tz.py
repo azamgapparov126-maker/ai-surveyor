@@ -362,6 +362,101 @@ def check_exchange():
     ok("количество без единицы — 422", st == 422 and "unit" in (e.get("errors") or {}), (st, e))
 
 
+# ------------------------------------------------------------------ 5а. Биржа: V внутри своего диапазона
+
+DEALS_FIXTURE = ROOT / "tests" / "fixtures" / "uzex_deals_diesel_grain.json.gz"
+
+
+def load_deals_fixture(con) -> int:
+    """Реестр сделок uzex.uz 08–13.10.2026 (дизтопливо и зерно, 5 824 сделки, без номеров контрактов) — в
+    exchange_quotes; даты сдвинуты так, чтобы последняя сделка была вчера. Цена за единицу — как в parse_page."""
+    import gzip
+    from app import uzex_sources as us
+    data = _json.loads(gzip.decompress(DEALS_FIXTURE.read_bytes()).decode("utf-8"))
+    last = max(date.fromisoformat(r[4]) for r in data["rows"])
+    shift = (date.today() - timedelta(days=1)) - last
+    for i, (name, unit, qty, total, td) in enumerate(data["rows"]):
+        d = (date.fromisoformat(td) + shift).isoformat()
+        pu = round(total / qty, 4)
+        un, pun = us.norm_unit(unit, pu)
+        con.execute("INSERT INTO exchange_quotes (page, contract_no, deal_key, name, grp, lot_qty, unit, unit_norm, "
+                    "price_raw, price_lot, price_unit, price_unit_norm, currency, trade_date, date_basis, fetched_at,"
+                    " fetched_date, url) VALUES ('List',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    ("F%d" % i, "fx-%d" % i, name, us.classify(name), qty, unit, un, total, total, pu, pun, "UZS", d,
+                     "дата сделки", db.now(), d, data["source"]))
+    return len(data["rows"])
+
+
+def _raw_vwap(con, grp):
+    """Прежний расчёт (до 13.10.2026): все сделки группы в тоннах, без фильтров — для документирования дефекта."""
+    from app import uzex_sources as us
+    rows = db.rows(con, "SELECT name, unit, lot_qty, price_unit_norm FROM exchange_quotes WHERE grp=? AND unit_norm='т'",
+                   grp)
+    pq = q = 0.0
+    ps = []
+    for r in rows:
+        k = us.UNITS[r["unit"].lower()][1]
+        pq += r["price_unit_norm"] * r["lot_qty"] / k
+        q += r["lot_qty"] / k
+        ps.append(r["price_unit_norm"])
+    ps.sort()
+    return pq / q, ps[len(ps) // 4], ps[3 * len(ps) // 4]
+
+
+def check_exchange_range():
+    print("5а. Биржа: V внутри диапазона, одна выборка для V, диапазона и надёжности")
+    vs_ = V.val_settings(None, {})
+    with db.tx() as con:
+        con.execute("DELETE FROM exchange_quotes")
+        n = load_deals_fixture(con)
+        raw, rq1, rq3 = _raw_vwap(con, "diesel")
+        ok("fixture: %d сделок; прежний VWAP дизтоплива %s вне [%s; %s] (форварды)" % (n, V._fmt(raw), V._fmt(rq1),
+                                                                                 V._fmt(rq3)),
+           n > 5000 and not (rq1 <= raw <= rq3), (raw, rq1, rq3))
+        for grp, qty, unit, hint in (("diesel", 120, "т", "дизельное топливо"), ("grain", 300, "т", "пшеница"),
+                                     ("grain", 300_000, "кг", "пшеница 3 класс")):
+            v = V.exchange_value(con, groups=[grp], quantity=qty, unit=unit, vs_=vs_, hint=hint)
+            r = v.get("range") or {}
+            ok("%s %s %s: V %s внутри [%s; %s]" % (grp, V._fmt(qty), unit, V._fmt(v.get("V")), V._fmt(r.get("low")),
+                                                   V._fmt(r.get("high"))),
+               v.get("available") and r["low"] <= v["V"] <= r["high"], v)
+            rel, pct = V.reliability_of(v["q1"], v["q3"], v["price"], vs_)
+            ok("  надёжность по той же выборке (%s, %s %%)" % (v["reliability"], v["reliability_pct"]),
+               (rel, pct) == (v["reliability"], v["reliability_pct"])
+               and r["low"] == round(v["quantity"]["normalized"] * v["q1"]), v)
+            if grp == "diesel":
+                ok("  форварды исключены до расчёта (10), выбросы — по IQR",
+                   v["sample"]["excluded_forward"] == 10 and v["sample"]["excluded_iqr"] > 0
+                   and v["n"] == v["sample"]["deals_raw"] - 10 - v["sample"]["excluded_iqr"], v["sample"])
+                ok("  цена дизтоплива 16–18 млн сум/т", 16e6 <= v["price"] <= 18e6, v["price"])
+            else:
+                ok("  пшеница отделена от зерноотходов и муки, цена 3–3,5 млн сум/т",
+                   v["sample"]["subtype"] and v["sample"]["excluded_subtype"] > 0 and 3e6 <= v["price"] <= 3.5e6,
+                   (v["price"], v["sample"]))
+        v300t = V.exchange_value(con, groups=["grain"], quantity=300, unit="т", vs_=vs_, hint="пшеница")
+        v300k = V.exchange_value(con, groups=["grain"], quantity=300_000, unit="кг", vs_=vs_, hint="пшеница")
+        ok("300 т = 300 000 кг — одна и та же оценка", v300t["V"] == v300k["V"] and v300t["range"] == v300k["range"])
+        # синтетический случай: один лот в кг среди лотов в тоннах
+        con.execute("DELETE FROM exchange_quotes")
+        seed_quotes(con, [(1, 10, "тонна", 12_000_000), (2, 15, "тонна", 12_100_000), (3, 20, "тонна", 11_950_000),
+                          (4, 25, "тонна", 12_050_000), (5, 500_000, "килограмм", 12_020_000)])
+        v = V.exchange_value(con, groups=["diesel"], quantity=120, unit="т", vs_=vs_)
+        vw = (10 * 12_000_000 + 15 * 12_100_000 + 20 * 11_950_000 + 25 * 12_050_000 + 500 * 12_020_000) / 570
+        ok("лот 500 000 кг = 500 т: объём 570 т, VWAP %s" % V._fmt(vw, 2),
+           abs(v["volume"] - 570) < 1e-9 and abs(v["vwap"] - vw) < 0.01 and v["price_basis"] == "vwap", v)
+        ok("V = 120 · VWAP внутри [Q1; Q3]", v["V"] == round(120 * vw) and v["range"]["low"] <= v["V"]
+           <= v["range"]["high"], v)
+        # крупный лот у края выборки: VWAP вне [Q1; Q3] — берётся медиана, V всё равно внутри диапазона
+        con.execute("DELETE FROM exchange_quotes")
+        seed_quotes(con, [(1, 5_000, "тонна", 11_900_000), (1, 1, "тонна", 11_950_000), (2, 1, "тонна", 12_000_000),
+                          (2, 1, "тонна", 12_050_000), (3, 1, "тонна", 12_100_000), (3, 1, "тонна", 12_150_000)])
+        v = V.exchange_value(con, groups=["diesel"], quantity=10, unit="т", vs_=vs_)
+        ok("VWAP вне [Q1; Q3] — медиана с предупреждением, V внутри диапазона",
+           v["price_basis"] == "median" and v["range"]["low"] <= v["V"] <= v["range"]["high"]
+           and any("медиана" in w for w in v["warnings"]), v)
+        con.execute("DELETE FROM exchange_quotes")
+
+
 # ------------------------------------------------------------------ 6. Затратный метод: магазин 450 м²
 
 SHOP_MUST = {"product_code": "0807", "sum_insured": 3_000_000_000, "object_value": 3_000_000_000,
@@ -447,6 +542,7 @@ def main():
             check_depreciation()
             check_sv(res)
             check_exchange()
+            check_exchange_range()
             check_cost()
             check_settings()
     finally:

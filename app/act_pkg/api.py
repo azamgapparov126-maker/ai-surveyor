@@ -26,7 +26,7 @@ from .photos import parse_kinds, _photos
 from .market import _market_query, MAX_SHOT_BODY, _shots
 from .build import build_data
 from .view import render
-from .export import build_docx, build_pdf, scoring_png
+from .export import build_docx, build_pdf, pdf_extras, scoring_png
 from .send import act_send
 
 
@@ -446,7 +446,7 @@ def act_docx(request: Request, aid: str, lang: str = ""):
         return _fail(request, t("not_found", _lang(request, lang)), 404)
     D, meta, row = got
     out = render(D, _lang(request, lang or row["lang"]), meta)
-    data = build_docx(out)
+    data = build_docx(out, extras=pdf_extras(D, row))
     return Response(content=data, media_type="application/vnd.openxmlformats-officedocument."
                                               "wordprocessingml.document",
                     headers={"Content-Disposition": f'attachment; filename="act_{meta["number"]}.docx"'})
@@ -460,7 +460,7 @@ def act_pdf(request: Request, aid: str, lang: str = ""):
         return _fail(request, t("not_found", _lang(request, lang)), 404)
     D, meta, row = got
     out = render(D, _lang(request, lang or row["lang"]), meta)
-    return Response(content=build_pdf(out), media_type="application/pdf",
+    return Response(content=build_pdf(out, extras=pdf_extras(D, row)), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="act_{meta["number"]}.pdf"'})
 
 
@@ -521,10 +521,24 @@ def admin_acts(request: Request, limit: int = 30):
 
 
 @router.get("/act/{aid}")
-def act_get(request: Request, aid: str, lang: str = ""):
-    """Свой акт (JSON) на языке ?lang= из сохранённого снимка, без пересчёта; чужой — 404."""
+def act_get(request: Request, aid: str, lang: str = "", how: int = 0):
+    """Свой акт (JSON) на языке ?lang= из сохранённого снимка, без пересчёта; чужой — 404.
+    how=1 — «Как посчитано» (ссылка QR-кодом со стр. 2 PDF): шаги ставки, вилка и прочие ставки, оценка стоимости
+    с формулой и источником, сценарии, части, сверка с договором — то, чего нет в документе."""
     got = _load_act(request, aid)
     if not got:
         return _fail(request, t("not_found", _lang(request, lang)), 404)
     D, meta, row = got
-    return _reply(request, render(D, _lang(request, lang or row["lang"]), meta))
+    out = render(D, _lang(request, lang or row["lang"]), meta)
+    if how:
+        return _reply(request, how_view(out))
+    return _reply(request, out)
+
+
+def how_view(out: dict) -> dict:
+    """Страница «Как посчитано» (JSON): расчёт ставки и стоимости по шагам с источниками (экспертные — calibrated 0)."""
+    keys = ("rate", "how_computed", "rate_fork", "premium", "min_rate", "valuation", "value_sv", "value_decision",
+            "value", "market_value", "scenarios", "parts", "objects", "objects_total", "factor_adjustment",
+            "contract_check", "below_min_assessment", "franchise", "scoring", "risk")
+    return {"ok": True, "id": out["id"], "number": out["number"], "lang": out["lang"], "date": out["date"],
+            "title": out["title"], "how": True, **{k: out[k] for k in keys if k in out}, "calibrated": 0}

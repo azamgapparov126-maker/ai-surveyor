@@ -24,7 +24,8 @@ from app.main import app                               # noqa: E402
 
 PASSED = []
 TOK = {}
-TEXT = actuarial.REPORT_FILE.read_text(encoding="utf-8")
+# текст отчёта — внутренний документ (.gitignore); на чистой машине — разобранный снимок tests/fixtures/actuarial_2022.json
+TEXT = actuarial.REPORT_FILE.read_text(encoding="utf-8") if actuarial.REPORT_FILE.exists() else None
 
 
 def ok(name, cond, hint=""):
@@ -74,8 +75,12 @@ def setup():
 
 
 def check_parse():
-    print("Разбор отчёта 2022 и сверка сумм")
-    res = actuarial.parse_2022(TEXT)
+    print("Разбор отчёта 2022 и сверка сумм" + ("" if TEXT else " — текста нет, снимок tests/fixtures/actuarial_2022.json"))
+    res = actuarial.parse_2022(TEXT) if TEXT else actuarial.read_2022(actuarial.FIXTURE_2022)
+    snap = actuarial.read_2022(actuarial.FIXTURE_2022)
+    ok("снимок в репозитории: сверка сумм проходит" + (" и цифры совпадают с разбором текста" if TEXT else ""),
+       not snap["errors"] and (not TEXT or (snap["items"] == res["items"] and snap["totals"] == res["totals"])),
+       snap["errors"])
     it, tot = res["items"], res["totals"]
     ok("сверка прошла без ошибок", not res["errors"], res["errors"])
     ok("8 субпортфелей: ТС, Авиа, Имущество + СМР, Ответственность, Фин. риски, ОСГОВТС, ОСГОР, Прочие",
@@ -103,10 +108,16 @@ def check_parse():
        and ld.get("date") and "временно" in json.dumps(ld, ensure_ascii=False)
        and "2022" in json.dumps(ld, ensure_ascii=False), ld)
 
-    broken = TEXT.replace("22 051,18", "22 151,18", 1)
-    res2 = actuarial.parse_2022(broken)
-    ok("испорченная сумма (стр. 8) — сверка не проходит", any("≠ итог" in e or "расходятся" in e
-                                                               for e in res2["errors"]), res2["errors"])
+    if TEXT:
+        broken = TEXT.replace("22 051,18", "22 151,18", 1)
+        res2 = actuarial.parse_2022(broken)
+        ok("испорченная сумма (стр. 8) — сверка не проходит", any("≠ итог" in e or "расходятся" in e
+                                                                   for e in res2["errors"]), res2["errors"])
+    else:
+        items = {k: dict(v) for k, v in it.items()}
+        items["vehicle"]["premium_earned"] += 100
+        errs = actuarial.check_totals(items, tot)
+        ok("испорченная сумма в снимке — сверка не проходит", any("≠ итог" in e for e in errs), errs)
     ok("число: «3 918,48», «- 2 020,84», «-»",
        actuarial.num("3 918,48") == 3918.48 and actuarial.num("- 2 020,84") == -2020.84 and actuarial.num("-") == 0.0
        and actuarial.num("Итого") is None)
@@ -128,8 +139,14 @@ def check_load():
     ok("в таблице 8 строк 2022 года с источником", len(rows) == 8 and all("Актуарный отчёт" in r["source"]
                                                                            for r in rows), len(rows))
     folder = Path(tempfile.mkdtemp(prefix="actuarial-"))
-    bad = folder / "отчёт.txt"
-    bad.write_text(TEXT.replace("3 918,48", "3 999,48"), encoding="utf-8")
+    if TEXT:
+        bad = folder / "отчёт.txt"
+        bad.write_text(TEXT.replace("3 918,48", "3 999,48"), encoding="utf-8")
+    else:
+        snap = json.loads(actuarial.FIXTURE_2022.read_text(encoding="utf-8"))
+        snap["items"]["vehicle"]["payouts"] = 3999.48
+        bad = folder / "отчёт.json"
+        bad.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
     before = rows
     try:
         with db.tx() as con:

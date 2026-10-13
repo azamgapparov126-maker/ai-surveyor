@@ -29,6 +29,9 @@ UNIT = "млн сум"
 TOL = 0.05                     # допуск сверки сумм, млн сум: в отчёте суммы округлены до сотых
 REPORT_FILE = db.ROOT / "library" / "02_Компания_INSON" / "Актуарный отчёт INSON за 2022 год.txt"
 SOURCE_2022 = "Актуарный отчёт INSON за 2022 год (library/02_Компания_INSON), стр. 8, 14–39"
+# Текст отчёта — внутренний документ, в репозиторий не входит (.gitignore: library/*). На чистой машине (git clone)
+# цифры берутся из разобранного снимка: только суммы по субпортфелям, без реквизитов, подписей и ФИО.
+FIXTURE_2022 = db.ROOT / "tests" / "fixtures" / "actuarial_2022.json"
 
 # субпортфели отчёта: код → (название в таблице стр. 8, начало раздела в тексте)
 SUBPORTFOLIOS = {
@@ -230,23 +233,51 @@ def save_year(con, year: int, items: dict, source: str, who: str, pages: Optiona
     return {"year": year, "added": n_new, "updated": n_upd}
 
 
-def load_2022(con, who: str = "система: актуарный отчёт", path: Optional[Path] = None) -> dict:
-    """Разбор отчёта 2022 и запись; ошибка сверки — ValueError, ничего не записано."""
-    p = Path(path or REPORT_FILE)
+def read_2022(path: Optional[Path] = None) -> dict:
+    """
+    Цифры отчёта 2022: {items, totals, errors, basis, file}. Порядок: явный путь (.txt — разбор текста, .json —
+    снимок) → текст library/02_Компания_INSON/… → снимок tests/fixtures/actuarial_2022.json (чистая машина).
+    У снимка суммы сверяются так же (check_totals). Нет ни текста, ни снимка — ValueError.
+    """
+    import json as _json
+    if path is not None:
+        p = Path(path)
+    elif REPORT_FILE.exists():
+        p = REPORT_FILE
+    elif FIXTURE_2022.exists():
+        p = FIXTURE_2022
+    else:
+        raise ValueError(f"нет файла отчёта: {REPORT_FILE} (и снимка {FIXTURE_2022})")
     if not p.exists():
         raise ValueError(f"нет файла отчёта: {p}")
+    if p.suffix.lower() == ".json":
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        items = {k: dict(v) for k, v in (data.get("items") or {}).items()}
+        totals = dict(data.get("totals") or {})
+        errors = [f"неизвестный субпортфель «{k}» в снимке" for k in items if k not in SUBPORTFOLIOS]
+        errors += check_totals(items, totals)
+        return {"items": items, "totals": totals, "errors": errors, "basis": "fixture", "file": p}
     res = parse_2022(p.read_text(encoding="utf-8"))
+    return dict(res, basis="text", file=p)
+
+
+def load_2022(con, who: str = "система: актуарный отчёт", path: Optional[Path] = None) -> dict:
+    """Отчёт 2022 (текст или снимок, см. read_2022) — в базу; ошибка сверки — ValueError, ничего не записано."""
+    res = read_2022(path)
     if res["errors"]:
         db.audit(con, who, "актуарный отчёт не загружен", "year:2022", {"ошибки": res["errors"][:20]})
         raise ValueError("сверка не прошла: " + "; ".join(res["errors"]))
-    saved = save_year(con, 2022, res["items"], SOURCE_2022, who, pages="8, 14–39")
-    return dict(saved, totals=res["totals"], items=res["items"])
+    source = SOURCE_2022 if res["basis"] == "text" else (
+        SOURCE_2022 + "; разобранный снимок tests/fixtures/actuarial_2022.json (текста отчёта на машине нет)")
+    saved = save_year(con, 2022, res["items"], source, who, pages="8, 14–39")
+    return dict(saved, totals=res["totals"], items=res["items"], basis=res["basis"])
 
 
 def ensure_loaded() -> Optional[dict]:
-    """Пустая таблица и файл отчёта на месте — загрузить 2022 (при старте сервера); иначе ничего."""
+    """Пустая таблица и есть текст отчёта или его снимок — загрузить 2022 (при старте сервера); иначе ничего."""
     with db.tx() as con:
-        if con.execute("SELECT 1 FROM actuarial_reports LIMIT 1").fetchone() or not REPORT_FILE.exists():
+        if con.execute("SELECT 1 FROM actuarial_reports LIMIT 1").fetchone() or \
+                not (REPORT_FILE.exists() or FIXTURE_2022.exists()):
             return None
         return load_2022(con)
 

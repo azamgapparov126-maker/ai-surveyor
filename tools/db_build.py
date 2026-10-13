@@ -9,6 +9,7 @@
 """
 import csv
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -670,6 +671,9 @@ def load_osgor_activities(cur):
 
 
 def main():
+    # модули app при импорте не пишут в базу сами (app/lawwatch.py): запись идёт через соединение con ниже,
+    # второе соединение упёрлось бы в его незавершённую транзакцию — «database is locked»
+    os.environ["SURVEYOR_DB_BUILD"] = "1"
     DB.parent.mkdir(parents=True, exist_ok=True)
     fresh = not DB.exists()
     con = sqlite3.connect(DB)
@@ -870,6 +874,55 @@ def main():
         n = cur.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         print(f"  {t:18} {n}")
     con.close()
+    fill_open_data(DB)
+
+
+STAT_FIXTURE = ROOT / "tests" / "fixtures" / "stat_series.json.gz"
+
+
+def fill_open_data(path: Path) -> None:
+    """
+    Открытые данные, без которых на чистой машине (git clone → db_build) не работают /stats, картина рынка и
+    специалист: заполняются, только если таблица ПУСТА (рабочие данные сервера не трогаются).
+      * market_stats (+ napp_claims, napp_branches, market_stats_notes) — tools/market_stats.py из data/parsed
+        (разбор отчётов НАПП лежит в репозитории и в образе сервера);
+      * stat_series — снимок stat.uz / data.egov.uz tests/fixtures/stat_series.json.gz; сервер потом
+        обновляет ряды сам (app/statagency.py).
+    Публичные данные НАПП и stat.uz, персональных данных нет.
+    """
+    import gzip
+
+    def count(table):
+        c = sqlite3.connect(path)
+        try:
+            return c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        except sqlite3.OperationalError:
+            return 0
+        finally:
+            c.close()
+
+    if not count("market_stats"):
+        import tools.market_stats as ms               # noqa: E402  (путь к ROOT добавлен в main)
+        if ms.PARSED.exists() and any(ms.PARSED.iterdir()):
+            ms.DB = path
+            try:
+                ms.build()
+            except Exception as e:                    # статистика — не справочник: сборку базы не роняем
+                print("  market_stats не собрана:", e)
+            print(f"  market_stats из data/parsed: {count('market_stats')} строк")
+        else:
+            print("  market_stats пуста: нет data/parsed (разбор отчётов НАПП) — tools/market_stats.py --refresh")
+    if not count("stat_series") and STAT_FIXTURE.exists():
+        data = json.loads(gzip.decompress(STAT_FIXTURE.read_bytes()).decode("utf-8"))
+        c = sqlite3.connect(path)
+        with c:
+            for g in data["groups"]:
+                c.executemany("INSERT OR IGNORE INTO stat_series (source, dataset_id, key, region, period, value, "
+                              "unit, fetched_at, url) VALUES (?,?,?,?,?,?,?,?,?)",
+                              [(g["source"], g["dataset_id"], g["key"], r[0], r[1], r[2], g["unit"], g["fetched_at"],
+                                g["url"]) for r in g["rows"]])
+        c.close()
+        print(f"  stat_series из снимка {STAT_FIXTURE.name}: {count('stat_series')} строк (сервер обновит сам)")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import re as _re
 import time
 from typing import Optional
 
@@ -162,42 +163,101 @@ def unit_norm(unit: str) -> tuple:
     return to, 1.0 / k
 
 
-def vwap(con, group: str, unit: str, days: int = 30, as_of: Optional[str] = None) -> dict:
+# Форвардные и фьючерсные контракты в реестре: «сумма сделки» у них — не стоимость товара (проверено 13.10.2026 на
+# реестре uzex.uz: «Дизельное топливо ЕВРО Л-К-4 (Форвард)» 600 т — 97,8 млн сум, т. е. 163 тыс. сум/т, синтетическое
+# GTL (Форвард) 9 600 т — 1,81 млн сум/т при спотовой цене ~17 млн сум/т). В оценку стоимости не идут.
+FORWARD_RX = _re.compile(r"форвард|forward|forvard|фьючерс|fyuchers|futures", _re.I)
+
+# Подвиды внутри группы: если в описании груза назван подвид, а сделок по нему не меньше min_deals — выборка сужается
+# до него (пшеница не смешивается с мукой, ячменём и зерноотходами). (подсказка в тексте, название сделки, исключить).
+SUBTYPES = {
+    "grain": [("пшениц|bugʻdoy|bug'doy", r"пшениц", r"отход|мук|отруб"),
+              (r"мук|\bun\b", r"мук", r"отход"),
+              ("ячмен", r"ячмен", r"отход"),
+              ("кукуруз", r"кукуруз", r"отход|масл"),
+              (r"\bрис\b", r"\bрис\b", r"отход")],
+    "diesel": [("синтетич|gtl", r"синтетич|gtl", "")],
+    "petrol": [(r"аи-?80|а-?80", r"80", ""), (r"аи-?92|а-?92", r"92", ""), (r"аи-?95|а-?95", r"95", ""),
+               (r"аи-?98|а-?98", r"98", "")],
+}
+
+
+def subtype_filter(group: str, hint: Optional[str]) -> Optional[tuple]:
+    """Подвид по тексту груза → (подсказка, regex названия, regex исключений) или None."""
+    h = str(hint or "")
+    for hint_rx, name_rx, excl in SUBTYPES.get(group, []):
+        if h and _re.search(hint_rx, h, _re.I):
+            return hint_rx, name_rx, excl
+    return None
+
+
+def _quantile(xs: list, p: float) -> float:
+    pos = p * (len(xs) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(xs) - 1)
+    return xs[lo] + (xs[hi] - xs[lo]) * (pos - lo)
+
+
+def vwap(con, group: str, unit: str, days: int = 30, as_of: Optional[str] = None, iqr_k: float = 1.5,
+         hint: Optional[str] = None, min_deals: int = 3) -> dict:
     """
-    VWAP = Σ(p·q) / Σq по сделкам реестра (exchange_quotes, только с датой сделки и в сумах) группы group за days
-    дней до as_of; p — цена за приведённую единицу, q — количество сделки в той же единице. Сделка учитывается один
-    раз (последняя загрузка). Квартили цены — без весов, для надёжности. Нет таблицы или сделок — deals = 0.
+    Биржевая цена за приведённую единицу по сделкам реестра (exchange_quotes, только с датой сделки и в сумах)
+    группы group за days дней до as_of. Сделка учитывается один раз (последняя загрузка).
+
+    Порядок — одна выборка для цены, диапазона и надёжности:
+      1) цена сделки p = сумма сделки / количество, приведённая к единице биржи (кг → т: ×1000), количество q — в той
+         же единице (кг → т: ÷1000);
+      2) форварды и фьючерсы исключаются (сумма в реестре — не стоимость товара);
+      3) подвид из hint («пшеница», «АИ-92»), если по нему не меньше min_deals сделок;
+      4) выбросы по цене вне [Q1 − k·IQR; Q3 + k·IQR] исключаются ДО взвешивания;
+      5) по оставшимся: VWAP = Σ(p·q) / Σq, медиана, Q1, Q3 (без весов).
+    Нет таблицы или сделок — deals = 0.
     """
     from datetime import date as _d, timedelta as _td
     end = as_of or _d.today().isoformat()
     start = (_d.fromisoformat(end) - _td(days=int(days))).isoformat()
     to, qty_factor = unit_norm(unit)
-    out = {"group": group, "unit": to, "qty_factor": qty_factor, "deals": 0, "vwap": None, "q1": None, "q3": None,
-           "volume": 0.0, "from": start, "to": end, "days": int(days),
-           "url": us.BASE + us.PAGES["List"]["path"]}
+    out = {"group": group, "unit": to, "qty_factor": qty_factor, "deals": 0, "vwap": None, "median": None,
+           "q1": None, "q3": None, "volume": 0.0, "from": start, "to": end, "days": int(days),
+           "deals_raw": 0, "excluded_forward": 0, "excluded_subtype": 0, "excluded_iqr": 0, "subtype": None,
+           "iqr_k": float(iqr_k), "fences": None, "url": us.BASE + us.PAGES["List"]["path"]}
     try:
-        rows = db.rows(con, "SELECT unit, unit_norm, lot_qty, price_unit_norm, trade_date, page FROM (%s) "
+        rows = db.rows(con, "SELECT name, unit, unit_norm, lot_qty, price_unit_norm, trade_date, page FROM (%s) "
                             "WHERE grp=? AND unit_norm=? AND trade_date > ? AND trade_date <= ? "
                             "AND price_unit_norm > 0 AND lot_qty > 0 AND currency='UZS'" % us._DEALS_SQL,
                        group, to, start, end)
     except Exception:
         return out
-    pq, q, prices = 0.0, 0.0, []
+    deals = []
     for r in rows:
         k = us.UNITS.get(str(r["unit"] or "").strip().lower(), (r["unit_norm"], 1.0))[1]
-        qn = float(r["lot_qty"]) / k
-        pq += float(r["price_unit_norm"]) * qn
-        q += qn
-        prices.append(float(r["price_unit_norm"]))
-    if not prices or q <= 0:
+        deals.append({"name": str(r["name"] or ""), "p": float(r["price_unit_norm"]), "q": float(r["lot_qty"]) / k,
+                      "date": r["trade_date"]})
+    out["deals_raw"] = len(deals)
+    spot = [d for d in deals if not FORWARD_RX.search(d["name"])]
+    out["excluded_forward"] = len(deals) - len(spot)
+    sub = subtype_filter(group, hint)
+    if sub:
+        _h, name_rx, excl = sub
+        narrow = [d for d in spot if _re.search(name_rx, d["name"], _re.I)
+                  and not (excl and _re.search(excl, d["name"], _re.I))]
+        if len(narrow) >= int(min_deals):
+            out["excluded_subtype"] = len(spot) - len(narrow)
+            out["subtype"] = name_rx
+            spot = narrow
+    if not spot:
         return out
-    xs = sorted(prices)
-
-    def qt(p):
-        pos = p * (len(xs) - 1)
-        lo = int(pos)
-        hi = min(lo + 1, len(xs) - 1)
-        return xs[lo] + (xs[hi] - xs[lo]) * (pos - lo)
-    out.update(deals=len(prices), vwap=pq / q, q1=qt(0.25), q3=qt(0.75), volume=round(q, 6),
-               first_date=min(r["trade_date"] for r in rows), last_date=max(r["trade_date"] for r in rows))
+    xs = sorted(d["p"] for d in spot)
+    q1, q3 = _quantile(xs, 0.25), _quantile(xs, 0.75)
+    lo_f, hi_f = q1 - iqr_k * (q3 - q1), q3 + iqr_k * (q3 - q1)
+    kept = [d for d in spot if lo_f - 1e-6 <= d["p"] <= hi_f + 1e-6]
+    out["excluded_iqr"] = len(spot) - len(kept)
+    out["fences"] = [round(lo_f, 2), round(hi_f, 2)]
+    q = sum(d["q"] for d in kept)
+    if not kept or q <= 0:
+        return out
+    ys = sorted(d["p"] for d in kept)
+    out.update(deals=len(kept), vwap=sum(d["p"] * d["q"] for d in kept) / q, median=_quantile(ys, 0.5),
+               q1=_quantile(ys, 0.25), q3=_quantile(ys, 0.75), volume=round(q, 6),
+               first_date=min(d["date"] for d in kept), last_date=max(d["date"] for d in kept))
     return out

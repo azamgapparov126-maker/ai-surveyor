@@ -733,9 +733,16 @@ def test_kind_source_texts_stay_other():
     Перебираем ВСЕ файлы папки (glob), а не белый список имён: раньше «Тарифная политика.txt»
     в список не входила и незаметно опознавалась техпаспортом с уверенностью 1.000.
     """
-    src = Path(__file__).resolve().parent.parent / "docs" / "source"
+    root = Path(__file__).resolve().parent.parent
+    src = root / "docs" / "source"
     files_ = sorted(src.glob("*.txt"))
-    assert len(files_) >= 10, "текстов в docs/source слишком мало: %d" % len(files_)
+    if len(files_) < 10:
+        # чистая машина: docs/source в .gitignore (тексты внутренних документов); в репозитории есть открытые тексты
+        # законов library/01_Законодательство/**/*.txt — они тоже «прочее» и проверяются вместо docs/source
+        files_ = sorted((root / "library" / "01_Законодательство").rglob("*.txt"))
+        print("docs/source пуста (чистая машина) — проверяются тексты законов library/01_Законодательство:",
+              len(files_))
+    assert len(files_) >= 10, "текстов в docs/source и library/01_Законодательство слишком мало: %d" % len(files_)
     checked, skipped = 0, []
     for f in files_:
         out = ingest.detect_kind(f.read_text(encoding="utf-8", errors="ignore"), [], f.name)

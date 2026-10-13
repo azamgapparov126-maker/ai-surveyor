@@ -155,7 +155,7 @@ def setup():
     return ids
 
 
-def make_request(author_id: int) -> int:
+def make_request(author_id) -> int:
     """Запрос с объектом, расчётом, оценкой стоимости и документом — на нём проверяем выгрузки."""
     with db.tx() as con:
         cur = con.execute("INSERT INTO requests (external_no, branch, product_code, policyholder,"
@@ -531,7 +531,10 @@ def check_no_pd():
 
 def main():
     ids = setup()
-    rid = make_request(0)                    # автор проставится после регистрации
+    # автор проставится после регистрации; пока — NULL: на базе из db/schema.sql created_by_user_id ссылается
+    # на users(id), и несуществующий автор 0 даёт «FOREIGN KEY constraint failed» (в старой базе колонка
+    # добавлена ALTER TABLE без ссылки, поэтому раньше проходило)
+    rid = make_request(None)
     real = (telegram.bot_token, tgbot.bot_token, tgbot._deliver, tgbot._deliver_file)
     try:
         telegram.bot_token = lambda: TOKEN

@@ -8,7 +8,7 @@ from ..act_texts import t
 
 from .common import ensure_tables, _fail, _lang, _load_act, load_settings, _reply, SEND_FORMATS, SENDS, _user, _who
 from .view import render
-from .export import build_docx, build_pdf
+from .export import build_docx, build_pdf, pdf_extras
 
 
 def _telegram_id(request: Request, user: Optional[dict], init_data: str) -> tuple:
@@ -70,7 +70,8 @@ def act_send(request: Request, aid: str, body: dict = Body(default={})):
     D, meta, row = got
     act_lang = _lang(request, body.get("lang") or row["lang"])
     act = render(D, act_lang, meta)
-    blob = build_docx(act) if fmt == "docx" else build_pdf(act)
+    ex = pdf_extras(D, row, photos=fmt == "pdf")
+    blob = build_docx(act, extras=ex) if fmt == "docx" else build_pdf(act, extras=ex)
     filename = f"act_{meta['number']}.{fmt}"
     sent = tgbot.send_file(tid, filename, blob, SEND_FORMATS[fmt], caption=t("send_caption", act_lang,
                                                                              number=meta["number"]),

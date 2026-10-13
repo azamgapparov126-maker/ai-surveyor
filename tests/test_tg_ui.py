@@ -58,6 +58,17 @@ NAV_BY_ROLE = {
 
 # ---------- минимальный ASGI-клиент ----------
 
+
+def _demo_act(name: str) -> dict:
+    """Настоящий ответ сервера (акт) для карточек: tests/fixtures/<name>.gz — в репозитории (sandbox/ в .gitignore,
+    на чистой машине его нет); снимок sandbox/<name> от 30.09–01.10.2026, ПД в нём нет (проверено llm.mask_pd)."""
+    import gzip
+    here = Path(__file__).resolve().parent
+    fx = here / "fixtures" / (name + ".gz")
+    if fx.exists():
+        return _json.loads(gzip.decompress(fx.read_bytes()).decode("utf-8"))
+    return _json.loads((here.parent / "sandbox" / name).read_text(encoding="utf-8"))
+
 def call(method: str, path: str, body=None, params=None, who=None):
     """Вызывает роут приложения напрямую по ASGI от имени вошедшего who. Возвращает (статус, тело)."""
     query = urlencode(params or {}, encoding="utf-8")
@@ -870,7 +881,7 @@ def _run_act_analytics(html):
         "const acts = JSON.parse(require('fs').readFileSync(0, 'utf8'));",
         "console.log(JSON.stringify(acts.map(a => [actAnHtml(a), a.sections.map(s => (s.lists || [])"
         ".filter(li => li.table).map(actDocTableHtml).join('')).join('')])));"])
-    acts = [_json.loads((root / "sandbox" / n).read_text(encoding="utf-8")) for n in ("act_demo.json", "act_demo_equipment.json")]
+    acts = [_demo_act(n) for n in ("act_demo.json", "act_demo_equipment.json")]
     old = dict(acts[0], analytics={"available": False, "reason": "old_act", "calibrated": 0})
     none = {k: v for k, v in acts[0].items() if k != "analytics"}
     import tempfile
@@ -995,7 +1006,7 @@ def _run_scoring(html):
         "CH.act = acts[0]; CH.scoImg = {id: acts[0].id, lang: acts[0].lang, url: 'blob:x', open: true};",
         "const img = scoImgHtml();",
         "console.log(JSON.stringify({pos, band, cards, img, G: SCO_G}));"])
-    acts = [_json.loads((root / "sandbox" / n).read_text(encoding="utf-8")) for n in ("act_demo.json", "act_demo_equipment.json")]
+    acts = [_demo_act(n) for n in ("act_demo.json", "act_demo_equipment.json")]
     # договор из частей: баллы частей и пометка — в форме ответа app/act_scoring.view (act_demo_multi.json старше скоринга)
     sc_m = dict(acts[1]["scoring"], parts_note="Договор из 2 частей: балл — по самой опасной части 1", worst_part=1,
                 parts=[{"index": 1, "class_code": "3", "score": 246, "class": "C", "score_class": "C2",
@@ -1116,8 +1127,8 @@ def _run_rate_fork(html):
         "const out = inp.acts.map(a => { CH.act = a; return {card: rfCardHtml(a), lay: strip(a.rate_fork && a.rate_fork.available ? rfLayout(a.rate_fork) : null)}; });",
         "out.push({part: rfPartHtml(inp.part)});",
         "console.log(JSON.stringify(out));"])
-    crane = _json.loads((root / "sandbox" / "act_demo.json").read_text(encoding="utf-8"))
-    equip = _json.loads((root / "sandbox" / "act_demo_equipment.json").read_text(encoding="utf-8"))
+    crane = _demo_act("act_demo.json")
+    equip = _demo_act("act_demo_equipment.json")
     # склад класса 8: поправка региона −3,2 % (жилой фонд по материалу стен) — в форме ответа сервера, как test_act 45б
     wh = copy.deepcopy(crane)
     F = wh["rate_fork"]
@@ -1334,7 +1345,7 @@ def _run_parts(html):
         "CH.must = {class_code: '13', sum_insured: 1}; CH.pt = null; CH.opt = {cf: {activity_kind: 'trade', limit_per_case: 200000000}};",
         "out.tpl13 = tplCardHtml(); out.cf13 = tfBodyCf('13', CH.opt.cf); out.more13 = tplMoreHtml();",
         "console.log(JSON.stringify(out));"])
-    act = _json.loads((root / "sandbox" / "act_demo_multi.json").read_text(encoding="utf-8"))
+    act = _demo_act("act_demo_multi.json")
     with tempfile.TemporaryDirectory(prefix="tg-pt-") as tmp:
         f = Path(tmp) / "pt.js"
         f.write_text(js, encoding="utf-8")

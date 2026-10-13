@@ -55,6 +55,18 @@ def test_names():
     assert "Каримов" not in c and "[ФИО]" in c, c
 
 
+def test_vehicle_brand_is_not_a_name():
+    """«Chevrolet Cobalt 2022» — марка и модель ТС, не ФИО; человек рядом с маркой всё равно маскируется."""
+    t = "Легковой Chevrolet Cobalt 2022, 3 фото"
+    assert not llm.has_pd(t), llm.mask_pd(t)
+    assert not llm.has_pd("Грузовой Isuzu NQR 2019"), llm.mask_pd("Грузовой Isuzu NQR 2019")
+    assert not llm.has_pd("Легковой Gamma Delta 2021"), "две латинские модели рядом с годом и «легковой»"
+    m = llm.mask_pd("Toyota Camry 2020, владелец Karimov Aziz")
+    assert "Toyota Camry 2020" in m and "Karimov" not in m and "[ФИО]" in m, m
+    for person in ("Owner: Ivanov Petr", "Ivanov Petr 1985", "John Smith"):
+        assert llm.has_pd(person), person
+
+
 def test_useful_text_survives():
     src = "Страховая сумма 250 000 000 сум, ставка 0,35%, класс 8, износ 12%"
     out = llm.mask_pd(src)

@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from tmpdb import temp_db                      # noqa: E402
+from tmpdb import ensure_market_stats, ensure_stat_series, temp_db   # noqa: E402
 from app import db                             # noqa: E402
 from app import market_picture as mp           # noqa: E402
 
@@ -227,6 +227,9 @@ def check_regions(con):
 
 def main():
     with temp_db() as path:
+        # чистая машина: рынок НАПП (market_stats) и ряды stat.uz (stat_series) — из data/parsed и снимка fixtures
+        ensure_market_stats()
+        ensure_stat_series()
         con = db.connect_path(path)
         try:
             res9 = check_market(con, "9", "cls8_9", 0.25)

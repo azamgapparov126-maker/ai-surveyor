@@ -572,6 +572,8 @@ def pdf_text(doc) -> str:
 
 RU_TITLES = ["Объект и идентификация", "Результаты осмотра", "Стоимость и страховая сумма",
              "Риск-факторы и франшиза", "Заключение и рекомендация"]
+# документ на две страницы (ТЗ 13.10.2026, день 9.1): свои пять разделов; разделы JSON и экрана — прежние
+DOC_TITLES = ["Объект", "Стоимость и страховая сумма", "Риск", "Решение и цена", "Условия"]
 
 
 def check_files(aid):
@@ -591,7 +593,7 @@ def check_files(aid):
         good, xml = False, str(e)
     ok("DOCX — zip с корректным XML", good, xml[:200])
     plain = re.sub(r"<[^>]+>", "", xml)
-    ok("в DOCX пять разделов", all(f"{i}. {tt}" in plain for i, tt in enumerate(RU_TITLES, 1)))
+    ok("в DOCX пять разделов", all(f"{i}. {tt}" in plain for i, tt in enumerate(DOC_TITLES, 1)))
     ok("в DOCX строка о подтверждении андеррайтером (подпись документа с 06.10.2026 — «ИИ-сюрвейером INSON»)",
        "Акт сформирован ИИ-сюрвейером INSON, подлежит подтверждению андеррайтером" in plain)
     ok("в DOCX шапка", "СЮРВЕЙЕРСКИЙ АКТ ПРЕДСТРАХОВОГО ОСМОТРА" in plain)
@@ -604,13 +606,13 @@ def check_files(aid):
     except Exception as e:
         text, pages = str(e), 0
     ok("PDF открывается pymupdf", pages >= 1, text[:200])
-    ok("в PDF пять разделов", all(f"{i}. {tt}" in text for i, tt in enumerate(RU_TITLES, 1)), text[:300])
+    ok("в PDF пять разделов", all(f"{i}. {tt}" in text for i, tt in enumerate(DOC_TITLES, 1)), text[:300])
     ok("в PDF строка о подтверждении андеррайтером (подпись документа с 06.10.2026 — «ИИ-сюрвейером INSON»)",
        "Акт сформирован ИИ-сюрвейером INSON, подлежит подтверждению андеррайтером" in text)
     st, blob, h = call("GET", f"/act/{aid}.pdf", params={"lang": "uz"}, raw=True)
     doc = pymupdf.open(stream=blob, filetype="pdf")
     text = pdf_text(doc)
-    ok("PDF на узбекском", "Koʻrik natijalari" in text or "Ko'rik natijalari" in text, text[:300])
+    ok("PDF на узбекском", "Qiymat va sugʻurta summasi" in text or "Qiymat va sug'urta summasi" in text, text[:300])
 
 
 # ------------------------------------------------------------------ 9. три языка
@@ -1715,8 +1717,10 @@ def check_new_files(aid, hand):
     plain = re.sub(r"<[^>]+>", "", xml)
     # акт на один лист (06.10.2026): сценарии словами, франшиза в «Условиях», ставка с франшизой в «Цене»,
     # мероприятия в разделе 5; лимит удержания и «как посчитано» — только в JSON и на экране
-    need = ["PML (вероятный максимум)", "EML (при отказе защиты)", "MFL (полная потеря)",
-            "Предупредительные мероприятия", "— применена", "с учётом франшизы", act.money(hand, "ru")]
+    # акт на 2 страницы (ТЗ 13.10.2026, день 9.1): PML / EML / MFL строкой раздела «Риск», франшиза — в строке ставки
+    # и в «Условиях», мероприятия с эффектом — в «Условиях»
+    # (точку с запятой шрифт PDF отдаёт греческим «;» — сравниваем без неё)
+    need = ["Крупный убыток: PML", " EML ", " MFL ", "— применена", "франшиза ", act.money(hand, "ru")]
     gone = ["Лимит собственного удержания", "Франшиза: как посчитано", "Как посчитаны сценарии"]
     ok("DOCX: сценарии, франшиза, рекомендации, премия с франшизой; удержания и «как посчитано» нет",
        all(x in plain for x in need) and not any(x in plain for x in gone),
@@ -1724,7 +1728,8 @@ def check_new_files(aid, hand):
     st, blob, h = call("GET", f"/act/{aid}.pdf", raw=True)
     text = pdf_text(pymupdf.open(stream=blob, filetype="pdf"))
     flat = [x.replace(" ", " ") for x in need]           # pdf_text приводит неразрывный пробел к обычному
-    ok("PDF: те же блоки и премия", all(x in text for x in flat), [x for x in flat if x not in text])
+    ok("PDF: те же блоки и премия", all(x in text for x in flat), ([x for x in flat if x not in text],
+                                                                 text[text.find("Крупный"):][:220]))
     st, a = call("GET", f"/act/{aid}")
     ok("премия в JSON, в разделе 4 и в файлах одна", a["premium"]["amount"] == hand
        and a["premium"]["text"] == act.money(hand, "ru"))
@@ -3337,8 +3342,9 @@ def check_branch_langs_files(aid):
         plain = re.sub(r"<[^>]+>", "", xml)
         bm_word = tx.t("cp_below", lang, req="", min="", answer="", why="", short="").split(" ")[0]
         bm_ok = not a["below_min_assessment"]["available"] or bm_word in plain
-        ok(f"{lang}: сверка в DOCX — подраздела нет (он в JSON и на экране), заниженная ставка — строкой «Цены»",
-           title not in plain and tx.t("cp_b_price", lang) in plain and bm_ok, plain[-300:])
+        ok(f"{lang}: сверка в DOCX — подраздела нет (он в JSON и на экране), заниженная ставка — строкой "
+           f"раздела «Решение и цена» (акт на 2 страницы)",
+           title not in plain and tx.t("a2_s4", lang) in plain and bm_ok, plain[-300:])
         st, blob, h = call("GET", f"/act/{aid}.pdf", params={"lang": lang}, raw=True)
         text = pdf_text(pymupdf.open(stream=blob, filetype="pdf"))
         ok(f"{lang}: сверка в PDF — то же", title.replace("ʻ", "'") not in text.replace("ʻ", "'")
@@ -4079,11 +4085,14 @@ def check_contract_langs_files(aid, x_aid):
                re.findall(r".{20}[А-Яа-яЁё].{20}", txt)[:3])
         st, blob, h = call("GET", f"/act/{aid}.docx", params={"lang": lang}, raw=True)
         plain = re.sub(r"<[^>]+>", "", zipfile.ZipFile(io.BytesIO(blob)).read("word/document.xml").decode("utf-8"))
-        ok(f"{lang}: сверка с договором — в JSON и на экране, в документе её нет (номер договора — в разделе 1)",
-           title not in plain and "45-ИМ/2026" in plain, plain[-300:])
+        # акт на 2 страницы (ТЗ 13.10.2026, день 9.1): в документе — итог сверки строкой раздела 4 и до 3 нарушений;
+        # подраздел со строками сверки — в JSON и на экране; номер договора — в разделе 1
+        cc_head = tx.t("a2_cc", lang, v="").split(":")[0]
+        ok(f"{lang}: сверка с договором — итог в документе, подраздела нет (номер договора — в разделе 1)",
+           cc_head in plain and not any(x in plain for x in lines) and "45-ИМ/2026" in plain, plain[-300:])
         st, blob, h = call("GET", f"/act/{aid}.pdf", params={"lang": lang}, raw=True)
         text = pdf_text(pymupdf.open(stream=blob, filetype="pdf")).replace("ʻ", "'")
-        ok(f"{lang}: сверка с договором в PDF — то же", title.replace("ʻ", "'") not in text and "45-ИМ/2026" in text,
+        ok(f"{lang}: сверка с договором в PDF — то же", cc_head.replace("ʻ", "'") in text and "45-ИМ/2026" in text,
            text[-300:])
         st, blob, h = call("GET", f"/act/{x_aid}.docx", params={"lang": lang}, raw=True)
         plain = re.sub(r"<[^>]+>", "", zipfile.ZipFile(io.BytesIO(blob)).read("word/document.xml").decode("utf-8"))
@@ -4716,13 +4725,15 @@ def check_analytics():
     plain = re.sub(r"<[^>]+>", "", zipfile.ZipFile(io.BytesIO(blob)).read("word/document.xml").decode("utf-8"))
     gone = ["Разбор по рискам", "Учтённые факторы", "Что изменит ставку", "Состав тарифа", "Сценарии убытка подробно",
             "Балл риска 0–100", "Рынок и статистика", "Франшиза: варианты", "Источник: НАПП", "Кратко:"]
-    need = ["Оценка риска", "Решение", "Условия", "Цена", "Опасности", "Ожидаемая частота", "Ожидаемая тяжесть"]
-    ok("40е: DOCX — раздел 4 четырьмя блоками; таблицы аналитики и источники — только в JSON и на экране",
+    # акт на 2 страницы (ТЗ 13.10.2026, день 9.1): пять разделов документа; риск — уровень и крупный убыток строкой
+    need = ["1. Объект", "2. Стоимость и страховая сумма", "3. Риск", "4. Решение и цена", "5. Условия", "Уровень:",
+            "Крупный убыток:"]
+    ok("40е: DOCX — пять разделов акта на 2 страницы; таблицы аналитики и источники — только в JSON и на экране",
        all(x in plain for x in need) and not any(x in plain for x in gone),
        ([x for x in need if x not in plain], [x for x in gone if x in plain]))
     st, blob, h = call("GET", f"/act/{aid_eq}.pdf", raw=True)
     text = pdf_text(pymupdf.open(stream=blob, filetype="pdf"))
-    ok("40е: PDF — те же четыре блока, без таблиц аналитики", all(x in text for x in need)
+    ok("40е: PDF — те же разделы, без таблиц аналитики", all(x in text for x in need)
        and not any(x in text for x in gone), [x for x in gone if x in text])
 
     # --- 40ж. старый акт без аналитики показывается ---
@@ -6209,8 +6220,7 @@ def check_parts_langs_files(aid):
     ok("русских слов в английском акте частей нет (кроме наименований объектов)",
        not re.search(r"[А-Яа-я]{4,}", "\n".join(li["title"] for s in e["sections"] for li in s.get("lists") or [])),
        [li["title"] for s in e["sections"] for li in s.get("lists") or [] if re.search(r"[А-Яа-я]{4,}", li["title"])][:5])
-    for lang, word in (("ru", "Ставки по частям договора"), ("uz", "Shartnoma qismlari"),
-                       ("en", "Rates by contract part")):
+    for lang, word in (("ru", "Части договора"), ("uz", "Shartnoma qismlari"), ("en", "Contract parts")):
         dx, pd = docx_plain(aid, lang), pdf_plain(aid, lang)
         a = call("GET", f"/act/{aid}", params={"lang": lang})[1]
         prem = flat(act.money(a["premium"]["amount"], lang))
@@ -6790,14 +6800,14 @@ def check_scoring_files(aid):
     st, blob, h = call("GET", f"/act/{aid}.pdf", raw=True)
     doc = pymupdf.open(stream=blob, filetype="pdf")
     p1 = re.sub(r"\s+", " ", doc[0].get_text().replace("\u00a0", " ").replace("\u00ad", "-"))
-    # акт на один лист (06.10.2026): страницы скоринга в акте нет — балл и класс одной фразой в заключении
-    ok("PDF акта: один лист, страницы скоринга нет; балл и класс — в заключении",
-       doc.page_count == 1 and "СТРАХОВОЙ СКОРИНГ ОБЪЕКТА" not in p1 and "СЮРВЕЙЕРСКИЙ АКТ ПРЕДСТРАХОВОГО ОСМОТРА" in p1
-       and f"страховой скоринг {sc['score']} из 500 (класс {sc['class_code']})" in p1, p1[:300])
+    # акт на 2 страницы (ТЗ 13.10.2026, день 9.1): страницы скоринга в акте нет — балл и класс в строке уровня риска
+    ok("PDF акта: не больше двух страниц, страницы скоринга нет; балл и класс — в строке уровня риска",
+       doc.page_count <= 2 and "СТРАХОВОЙ СКОРИНГ ОБЪЕКТА" not in p1 and "СЮРВЕЙЕРСКИЙ АКТ ПРЕДСТРАХОВОГО ОСМОТРА" in p1
+       and f"балл {sc['class_code']} ({sc['score']} из 500)" in p1, p1[:300])
     plain = act.build_pdf(dict(a, scoring={"available": False}))
-    ok("PDF без скоринга — тот же один лист, без фразы о скоринге",
+    ok("PDF без скоринга (и без фото) — один лист, без балла",
        pymupdf.open(stream=plain, filetype="pdf").page_count == 1
-       and "страховой скоринг" not in pdf_text(pymupdf.open(stream=plain, filetype="pdf")))
+       and "из 500" not in pdf_text(pymupdf.open(stream=plain, filetype="pdf")))
     st, sblob, h = call("GET", f"/act/{aid}/scoring.pdf", raw=True)
     sdoc0 = pymupdf.open(stream=sblob, filetype="pdf")
     s1 = re.sub(r"\s+", " ", sdoc0[0].get_text().replace("\u00a0", " ").replace("\u00ad", "-"))
@@ -6832,9 +6842,10 @@ def check_scoring_files(aid):
     ok("DOCX: корректный zip и XML; картинки скоринга в акте нет (она — в scoring.png)", good and not media
        and "<wp:inline" not in xml, (good, media))
     plain = re.sub(r"<[^>]+>", "", xml)
-    ok("DOCX: акт без секции скоринга и разрыва страницы; балл и класс — фразой в заключении, поля 15 мм",
+    # акт на 2 страницы: один разрыв страницы — перед «Фото осмотра»
+    ok("DOCX: акт без секции скоринга; балл и класс — в строке уровня риска; разрыв перед фото; поля 15 мм",
        "СТРАХОВОЙ СКОРИНГ ОБЪЕКТА" not in plain and "СЮРВЕЙЕРСКИЙ АКТ ПРЕДСТРАХОВОГО ОСМОТРА" in plain
-       and 'w:type="page"' not in xml and f"страховой скоринг {sc['score']} из 500" in plain
+       and xml.count('w:type="page"') == 1 and f"балл {sc['class_code']} ({sc['score']} из 500)" in plain
        and 'w:left="850"' in xml, plain[:200])
     # отдельные адреса: владелец получает, чужой — 404
     st, blob, h = call("GET", f"/act/{aid}/scoring.pdf", raw=True)
@@ -7859,7 +7870,7 @@ def check_rate_fork():
     plain_docx, plain_pdf = docx_plain(a["id"]), pdf_plain(a["id"])
     ok("apply: премия одна и та же в Word и PDF, в «Цене» — ставка с учётом региона и рынка",
        flat(act.money(prem, "ru")) in plain_docx and flat(act.money(prem, "ru")) in plain_pdf
-       and "с учётом региона и рынка" in plain_pdf)
+       and "поправки региона и рынка" in plain_pdf)       # акт на 2 страницы: строка цепочки множителей
     st, a = call("POST", "/act/make", {"lang": "ru", "must": CRANE_MUST,
                                        "optional": dict(CRANE_OPT, object_kind="truck_crane",
                                                         deductible={"pct": 1, "type": "unconditional"})})
@@ -8112,7 +8123,8 @@ def check_below_min_act():
            and not _cyr(b["text"]) and not any(_cyr(r["text"]) for r in b["reasons"])
            and not any(_cyr(c["text"]) for c in b["conditions"]) and not _cyr(b["note"]), b["text"][:300])
     dx, pf = docx_plain(cond_aid), pdf_plain(cond_aid)
-    ok("Word и PDF: одна строка «Цены» — запрошенная ставка ниже минимума, ответ и недобор премии; подробный "
+    ok("Word и PDF: одна строка раздела «Решение и цена» — запрошенная ставка ниже минимума, ответ и недобор "
+       "премии; подробный "
        "подраздел — в JSON и на экране",
        all(s_ in dx and s_ in pf for s_ in ("Запрошенная ставка", "ниже минимума", "да, при условиях",
                                              "300 000 сум"))
@@ -8851,7 +8863,7 @@ def check_objects():
        and any(li.get("title") == "Objects of the contract (3)" for li in en["sections"][0]["lists"]), en.get("objects"))
     st, body, _h = call("GET", f"/act/{aid}.docx", raw=True)
     xml = zipfile.ZipFile(io.BytesIO(body)).read("word/document.xml").decode("utf-8")
-    ok("Word: таблица объектов в разделе 1 (раздел 3 — одной строкой, сумма к стоимости по объектам — в JSON)",
+    ok("Word: таблица объектов (акт на 2 страницы — в разделе «Решение и цена»; сумма к стоимости по объектам — в JSON)",
        st == 200 and xml.count("Excavator C (test)") >= 1 and "Объекты договора (3)" in xml
        and "Сумма к стоимости по объектам" not in xml)
     st, body, _h = call("GET", f"/act/{aid}.pdf", params={"lang": "uz"}, raw=True)
@@ -9288,12 +9300,13 @@ def check_one_page_0610(crane_aid):
        and a["inspection"]["damages_summary"]["excluded_as_preexisting"] is True, a["inspection"])
     n, txt = act_pdf_pages(a["id"])
     dx = docx_plain(a["id"])
-    want2 = "Выявлены: царапины (левое крыло), вмятина (задний бампер) — исключаются из покрытия как предсуществующие"
-    want4 = "Исключение: предсуществующие повреждения по списку раздела 2"
-    ok("49б: раздел 2 — «выявлены … исключаются из покрытия как предсуществующие», раздел 4 «Условия» — "
-       "исключение по списку раздела 2 (PDF и Word)", want2 in txt and want4 in txt and want2 in dx and want4 in dx,
-       txt[:900])
-    ok("49б: легковой автомобиль с осмотром, повреждениями и сценариями — PDF на один лист", n == 1, n)
+    # акт на 2 страницы (ТЗ 13.10.2026, день 9.1): повреждения — в строке «Состояние» раздела 1, исключение — в
+    # разделе 5 «Условия»; фото — на стр. 2
+    want2 = "повреждения: царапины (левое крыло), вмятина (задний бампер)"
+    want4 = "Исключение: предсуществующие повреждения — царапины (левое крыло), вмятина (задний бампер)"
+    ok("49б: раздел 1 «Состояние» — повреждения, раздел 5 «Условия» — исключение предсуществующих повреждений "
+       "(PDF и Word)", want2 in txt and want4 in txt and want2 in dx and want4 in dx, txt[:900])
+    ok("49б: легковой автомобиль с осмотром, повреждениями и сценариями — PDF на 2 страницы (стр. 2 — фото)", n == 2, n)
     # советы по подгруппе: легковой
     codes = [m["code"] for m in a["measures"]]
     ok("49б: мероприятия легкового — стоянка/гараж, иммобилайзер и GPS-метка, круг водителей, маркировка, "
@@ -9323,17 +9336,18 @@ def check_one_page_0610(crane_aid):
        "Что снижает вероятность MFL: охраняемая стоянка, иммобилайзер, GPS-метка" in scn["mfl"]["text"]
        and "охраняемая стоянка — не указано, иммобилайзер — есть, GPS-метка — нет" in scn["mfl"]["text"],
        scn["mfl"]["text"])
-    ok("49б: в документе — одна строка на сценарий (без повтора сумм), суммы — строкой «Ожидаемая тяжесть»",
-       all(flat(scn[k]["text"].replace(f" ({act.money(scn[k]['amount'], 'ru')})", ""))[:60] in txt
-           for k in ("pml", "eml", "mfl")) and "Ожидаемая тяжесть (экспертно): PML" in txt, txt[:600])
+    ok("49б: в документе PML / EML / MFL одной строкой «Крупный убыток» (сценарии словами — в JSON и на экране)",
+       all(x in txt for x in ("Крупный убыток: PML 150 млн сум (50 %)", " EML 225 млн сум (75 %)",
+                               " MFL 300 млн сум (100 %)")),
+       txt[txt.find("Крупный"):][:220])
     ok("49б: решение по правилу — фото есть, уровень не высокий, ставка не ниже минимума → «Принять»",
-       "Решение: Принять" in txt, txt[txt.find("Решение"):txt.find("Решение") + 120])
+       "Принять" in txt and "На рассмотрение" not in txt, txt[txt.find("Решение"):txt.find("Решение") + 120])
     for lg in ("uz", "en"):
         st, al = call("GET", f"/act/{a['id']}", params={"lang": lg})
         tt = " ".join(al["scenarios"][k]["text"] for k in ("pml", "eml", "mfl")) + al["inspection"][
             "damages_summary"]["severity_label"]
         ok(f"49б {lg}: сценарии словами и тяжесть повреждений — на языке акта, без кириллицы",
-           not re.search(r"[А-Яа-яЁё]", tt) and act_pdf_pages(a["id"], lg)[0] == 1, tt[:200])
+           not re.search(r"[А-Яа-яЁё]", tt) and act_pdf_pages(a["id"], lg)[0] <= 2, tt[:200])
 
     # --- 49в. КАСКО без фото: легковой по умолчанию, решение «на рассмотрение» ---
     st, k = call("POST", "/act/make", {"lang": "ru", "must": {"product_code": "0309", "sum_insured": 300_000_000,
@@ -9343,8 +9357,8 @@ def check_one_page_0610(crane_aid):
     n, txt = act_pdf_pages(k["id"])
     ok("49в: КАСКО 0309 без вида объекта — советы легкового (подгруппа по умолчанию car)",
        st == 200 and "vh_car_antitheft" in kc and not any(c.startswith("sp_") for c in kc), kc)
-    ok("49в: КАСКО без фото — «На рассмотрение специалиста: нет фото объекта», PDF на один лист",
-       n == 1 and "Решение: На рассмотрение специалиста: нет фото объекта" in txt, (n, txt[:300]))
+    ok("49в: КАСКО без фото — «На рассмотрение», причина «нет фото объекта», PDF на один лист",
+       n == 1 and "На рассмотрение" in txt and "Нет фото объекта" in txt, (n, txt[:300]))
 
     # --- 49г. грузовой автомобиль: свои советы ---
     st, tr = call("POST", "/act/make", {"lang": "ru", "must": CAR_MUST,
@@ -9360,7 +9374,7 @@ def check_one_page_0610(crane_aid):
     cc = [m["code"] for m in cr["measures"]]
     crane_all = " ".join([_json.dumps(cr["measures"], ensure_ascii=False),
                           _json.dumps(cr["analytics"].get("summary"), ensure_ascii=False), txt])
-    ok("49д: автокран — PDF на один лист", n == 1, n)
+    ok("49д: автокран с фото — PDF на 2 страницы (стр. 2 — фото, подписи, QR)", n == 2, n)
     ok("49д: автокран — прежние советы спецтехники (площадка, мониторинг, опоры крана, допуск оператора); "
        "«круг водителей» и «допущенные водители» не советуются (иммобилайзер для крана допустим)",
        {"sp_parking_guarded", "sp_gps", "sp_crane_setup", "sp_operator"} & set(cc)
@@ -9372,9 +9386,9 @@ def check_one_page_0610(crane_aid):
            "text"] and "хищение с площадки" in cr["scenarios"]["mfl"]["text"], cr["scenarios"]["mfl"]["text"])
     st, wh = call("POST", "/act/make", {"lang": "ru", "must": WH8_MUST, "optional": WH8_OPT})
     n, txt = act_pdf_pages(wh["id"])
-    ok("49д: склад 0807 — PDF на один лист, четыре блока раздела 4", n == 1 and all(
-        x in txt for x in ("Оценка риска", "Решение:", "Условия", "Цена", "Опасности", "Ожидаемая частота",
-                           "Ожидаемая тяжесть")), (n, txt[:300]))
+    ok("49д: склад 0807 без фото — PDF не больше 2 страниц, пять разделов акта", n <= 2 and all(
+        x in txt for x in ("1. Объект", "2. Стоимость и страховая сумма", "3. Риск", "4. Решение и цена", "5. Условия",
+                           "Уровень:", "Крупный убыток:")), (n, txt[:300]))
     ws = wh["scenarios"]
     ok("49д: склад — сценарии словами: пожар в одном отсеке / распространение на здание или землетрясение / "
        "полная гибель", "пожар в одном" in ws["pml"]["text"]

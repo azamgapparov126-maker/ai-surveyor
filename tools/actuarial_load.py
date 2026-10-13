@@ -37,8 +37,9 @@ def _print(items: dict, totals: dict) -> None:
 def run(path=None, file=None, check=False) -> dict:
     if path:
         db.DB_PATH = Path(path)
-    f = Path(file) if file else actuarial.REPORT_FILE
-    res = actuarial.parse_2022(f.read_text(encoding="utf-8"))
+    # текста отчёта нет (чистая машина) — разобранный снимок tests/fixtures/actuarial_2022.json, см. read_2022
+    res = actuarial.read_2022(Path(file) if file else None)
+    f = res["file"]
     if res["errors"]:
         print("Сверка не прошла:")
         for e in res["errors"]:

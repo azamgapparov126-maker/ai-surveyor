@@ -1674,46 +1674,80 @@ def vehicle_valuation(con, *, brand: str, model: str, year, as_of=None, mileage=
 # ---------- биржа: VWAP ----------
 
 def exchange_value(con, *, groups: list, quantity: float, unit: str, as_of=None, vs_: dict,
-                   sum_insured: Optional[float] = None) -> dict:
+                   sum_insured: Optional[float] = None, hint: Optional[str] = None) -> dict:
     """
-    V = Q · Σp·q / Σq по сделкам exchange_quotes за days дней (< min_deals — за fallback_days). Группа — первая из
-    groups, у которой есть сделки в единице unit. Количество и единица — ввод сотрудника (optional.quantity, unit).
+    V = Q · p, где p — биржевая цена за единицу по ОДНОЙ выборке сделок exchange_quotes за days дней
+    (< min_deals — за fallback_days): без форвардов и фьючерсов, подвид из hint (если сделок по нему достаточно),
+    без выбросов по IQR (k = valuation.vehicle.iqr_k). По этой же выборке — диапазон [Q·Q1; Q·Q3] и надёжность.
+    p = VWAP = Σ(p·q) / Σq; если VWAP вне [Q1; Q3] (несколько крупных лотов по краю выборки) — p = медиана,
+    с предупреждением: V всегда внутри своего диапазона. Группа — первая из groups, у которой есть сделки в единице
+    unit. Количество и единица — ввод сотрудника (optional.quantity, unit).
     """
     from . import uzex
     ex = vs_["exchange"]
     as_of = to_date(as_of) or date.today()
+    k_iqr = float((vs_.get("vehicle") or {}).get("iqr_k") or 1.5)
+    md = int(ex["min_deals"])
     tried = []
     for g in groups:
-        w = uzex.vwap(con, g, unit, days=int(ex["days"]), as_of=as_of.isoformat())
+        w = uzex.vwap(con, g, unit, days=int(ex["days"]), as_of=as_of.isoformat(), iqr_k=k_iqr, hint=hint,
+                      min_deals=md)
         period = int(ex["days"])
-        if w["deals"] < int(ex["min_deals"]):
-            w2 = uzex.vwap(con, g, unit, days=int(ex["fallback_days"]), as_of=as_of.isoformat())
+        if w["deals"] < md:
+            w2 = uzex.vwap(con, g, unit, days=int(ex["fallback_days"]), as_of=as_of.isoformat(), iqr_k=k_iqr,
+                           hint=hint, min_deals=md)
             if w2["deals"] > w["deals"]:
                 w, period = w2, int(ex["fallback_days"])
         tried.append({"group": g, "deals": w["deals"], "days": period})
         if not w["deals"] or not w.get("vwap"):
             continue
         Qn = float(quantity) * w["qty_factor"]
-        V = round(Qn * w["vwap"])
-        rel, rel_pct = reliability_of(w["q1"], w["q3"], w["vwap"], vs_)
+        inside = w["q1"] - 1e-6 <= w["vwap"] <= w["q3"] + 1e-6
+        price = w["vwap"] if inside else w["median"]
+        basis = "vwap" if inside else "median"
+        V = round(Qn * price)
+        low, high = round(Qn * w["q1"]), round(Qn * w["q3"])
+        V = min(max(V, low), high)                  # округление не выводит V за границы
+        rel, rel_pct = reliability_of(w["q1"], w["q3"], price, vs_)
+        sample = "%d сделок за %d дней (%s — %s), объём %s %s" % (
+            w["deals"], period, w["from"], w["to"], _fmt(w["volume"], 3), w["unit"])
+        excl = []
+        if w.get("excluded_forward"):
+            excl.append("форварды и фьючерсы — %d (сумма в реестре не равна стоимости товара)" % w["excluded_forward"])
+        if w.get("excluded_subtype"):
+            excl.append("другие подвиды группы — %d" % w["excluded_subtype"])
+        if w.get("excluded_iqr"):
+            excl.append("выбросы по цене вне [%s; %s] сум/%s (IQR, k = %s) — %d" % (
+                _fmt(w["fences"][0]), _fmt(w["fences"][1]), w["unit"], _fmt(k_iqr, 1), w["excluded_iqr"]))
         out = {"method": "exchange", "available": True, "V": V, "currency": "UZS", "date": as_of.isoformat(),
-               "range": {"low": round(Qn * w["q1"]), "high": round(Qn * w["q3"])}, "n": w["deals"],
+               "range": {"low": low, "high": high}, "n": w["deals"],
                "reliability": rel, "reliability_pct": rel_pct, "settings": _settings_tag(vs_), "calibrated": 0,
                "source": {"name": uzex.us.SOURCE_NAME, "url": w["url"], "group": g,
                           "group_label": uzex.us.group_label(g)},
                "period": {"from": w["from"], "to": w["to"], "days": period, "fallback": period != int(ex["days"])},
                "quantity": {"value": float(quantity), "unit": unit, "normalized": round(Qn, 6),
                             "unit_norm": w["unit"]},
-               "vwap": round(w["vwap"], 2), "volume": w["volume"],
-               "formula": "V = Q · Σ(p·q) / Σq = %s %s · %s сум = %s" % (
-                   _fmt(Qn, 3), w["unit"], _fmt(w["vwap"], 2), _fmt(V)),
-               "steps": ["Биржевая цена (VWAP) группы «%s»: %d сделок за %d дней (%s — %s), объём %s %s." % (
-                   uzex.us.group_label(g), w["deals"], period, w["from"], w["to"], _fmt(w["volume"], 3), w["unit"]),
-                   "Цены биржи — оптовые, франко-склад продавца, без доставки и наценки."],
+               "vwap": round(w["vwap"], 2), "median": round(w["median"], 2), "price": round(price, 2),
+               "price_basis": basis, "q1": round(w["q1"], 2), "q3": round(w["q3"], 2), "volume": w["volume"],
+               "sample": {"deals_raw": w["deals_raw"], "deals": w["deals"], "excluded_forward": w["excluded_forward"],
+                          "excluded_subtype": w["excluded_subtype"], "excluded_iqr": w["excluded_iqr"],
+                          "subtype": w["subtype"], "iqr_k": k_iqr, "fences": w["fences"]},
+               "formula": ("V = Q · Σ(p·q) / Σq = %s %s · %s сум = %s" if inside else
+                           "V = Q · медиана(p) = %s %s · %s сум = %s") % (_fmt(Qn, 3), w["unit"], _fmt(price, 2),
+                                                                         _fmt(V)),
+               "steps": ["Биржевая цена группы «%s»: %s." % (uzex.us.group_label(g), sample),
+                         "Диапазон и надёжность — по той же выборке: Q1 %s, Q3 %s сум/%s." % (
+                             _fmt(w["q1"]), _fmt(w["q3"]), w["unit"])]
+                        + (["Исключено до расчёта: " + "; ".join(excl) + "."] if excl else [])
+                        + ["Цены биржи — оптовые, франко-склад продавца, без доставки и наценки."],
                "warnings": [], "tried": tried}
+        if not inside:
+            out["warnings"].append("средневзвешенная цена %s сум/%s вне межквартильного диапазона выборки — "
+                                   "взята медиана %s сум/%s" % (_fmt(w["vwap"]), w["unit"], _fmt(w["median"]),
+                                                                w["unit"]))
         if period != int(ex["days"]):
             out["warnings"].append("за %d дней сделок меньше %d — взят период %d дней"
-                                   % (int(ex["days"]), int(ex["min_deals"]), period))
+                                   % (int(ex["days"]), md, period))
         sw = sv_warning(sum_insured, V, vs_)
         if sw:
             out["warnings"].append(sw["text"])
@@ -1901,8 +1935,9 @@ def for_act(con, *, cls: str, group: Optional[str], kind: Optional[str], m: dict
                                                                            vs_["exchange"]["classes"]]:
         from . import act_analytics as aa
         groups, _basis = aa.exchange_groups(cls, kind, o.get("class_fields"), text, o.get("object_type"))
+        hint = aa._exchange_text(o.get("class_fields"), text, o.get("object_type"))
         val = exchange_value(con, groups=groups, quantity=o["quantity"], unit=o["unit"], as_of=today, vs_=vs_,
-                             sum_insured=S) if groups else \
+                             sum_insured=S, hint=hint) if groups else \
             {"method": "exchange", "available": False, "reason": "вид товара не распознан — группа биржи не выбрана"}
     building = group == "property" or kind in BUILDING_KINDS or o.get("building_type") or o.get("material")
     if val is None and building and str(cls) in ("8", "9") and facts.get("area_m2"):

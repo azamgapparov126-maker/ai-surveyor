@@ -42,8 +42,8 @@ def temp_db(name: str = "surveyor-test.db"):
 
 def ensure_market_stats() -> int:
     """
-    Рыночная статистика НАПП (market_stats) в текущей базе — для копии на чистой машине: tools/db_build.py её не
-    заполняет (в образе это делает tools/market_stats.py, данные — data/parsed в репозитории). Таблица уже
+    Рыночная статистика НАПП (market_stats) в текущей базе — на случай базы, собранной до 13.10.2026: теперь её
+    заполняет и tools/db_build.py (fill_open_data, из data/parsed в репозитории). Таблица уже
     заполнена — ничего не делает. Возвращает число строк. Вызывать внутри temp_db(): пишет в db.DB_PATH.
     """
     with db.tx() as con:
@@ -65,9 +65,9 @@ STAT_FIXTURE = ROOT / "tests" / "fixtures" / "stat_series.json.gz"
 
 def ensure_stat_series() -> int:
     """
-    Открытые данные stat.uz (stat_series) в текущей базе — для копии на чистой машине: сервер скачивает их сам, а
-    tools/db_build.py — нет. Берутся из tests/fixtures/stat_series.json.gz (снимок рабочей базы, без ПД). Таблица
-    уже заполнена — ничего не делает. Возвращает число строк. Вызывать внутри temp_db().
+    Открытые данные stat.uz (stat_series) в текущей базе — для копии на чистой машине: сервер скачивает их сам,
+    tools/db_build.py (с 13.10.2026) заливает тот же снимок в пустую таблицу. Берутся из
+    tests/fixtures/stat_series.json.gz (снимок рабочей базы, без ПД). Таблица уже заполнена — ничего не делает. Возвращает число строк. Вызывать внутри temp_db().
     """
     import gzip
     import json

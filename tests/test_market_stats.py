@@ -42,7 +42,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "tools"))
 os.environ["SURVEYOR_NO_BACKGROUND"] = "1"
 
-from tmpdb import temp_db                       # noqa: E402
+from tmpdb import ensure_stat_series, temp_db   # noqa: E402
 from app import db, market_picture as mp        # noqa: E402
 from app import act_engine as ae, act_analytics as aa, risk_stats as rs   # noqa: E402
 import market_stats as ms                       # noqa: E402
@@ -475,6 +475,9 @@ def main():
     with temp_db() as path:
         ms.DB = path
         n, dates = ms.build()
+        # поправка региона по жилому фонду (−3,2 %) и прочие показатели вилки — из stat_series (stat.uz);
+        # на чистой машине они берутся из снимка tests/fixtures/stat_series.json.gz
+        ensure_stat_series()
         print(f"market_stats на копии: {n} строк, срезы {dates[0]}…{dates[-1]}")
         con = db.connect_path(path)              # как у сервера: строки sqlite3.Row
         try:

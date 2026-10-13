@@ -31,6 +31,7 @@
 """
 import hashlib
 import html as htmllib
+import os
 import json
 import re
 import threading
@@ -721,7 +722,10 @@ def law_feed_page(embed: int = 0):
     return _page(web.read_text(FEED_HTML), "/law-feed", embed)
 
 
-_ensure_seed()
+# tools/db_build.py держит открытую запись в той же базе и заливает реестр сам (seed_acts на своём соединении):
+# второе соединение при импорте упёрлось бы в блокировку («database is locked»)
+if not os.environ.get("SURVEYOR_DB_BUILD"):
+    _ensure_seed()
 
 
 def _page(html: str, active: str, embed: int) -> str:

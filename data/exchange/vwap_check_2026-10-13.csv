@@ -1,0 +1,3 @@
+group;quantity;unit;hint;deals_raw;excluded_forward;excluded_subtype;excluded_iqr;deals_used;old_vwap_sum_per_t;old_q1;old_q3;new_price_sum_per_t;price_basis;V_sum;range_low_sum;range_high_sum;reliability;reliability_pct;source;period
+diesel;120;т;дизельное топливо;4145;10;0;549;3586;9774742;16788490;17153000;16790010;median;2014801200;2014620000;2028000000;high;0.7;https://uzex.uz/Trade/List;2026-10-08..2026-10-13
+grain;300;т;пшеница;1652;0;15;2;1635;3246968;3118000;3333000;3262343;vwap;978702800;935400000;999900000;high;6.6;https://uzex.uz/Trade/List;2026-10-08..2026-10-13
