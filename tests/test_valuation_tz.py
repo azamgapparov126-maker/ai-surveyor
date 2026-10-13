@@ -136,8 +136,8 @@ def check_robots():
     u1 = vs.analog_url("Chevrolet", "Cobalt", 2022, 1)
     u2 = vs.analog_url("Chevrolet", "Cobalt", 2022, 3)
     ok("адреса: только ?year[from]= и &page=",
-       u1 == "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022"
-       and u2 == "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022&page=3", (u1, u2))
+       u1 == "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022"
+       and u2 == "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022&page=3", (u1, u2))
     ok("оба адреса разрешены robots.txt (robotparser и RFC 9309)",
        vs.robots_allowed_text(ROBOTS_TEXT, u1)[0] and vs.robots_allowed_text(ROBOTS_TEXT, u2)[0])
     bad = "https://avtoelon.uz/avto/chevrolet/cobalt/?sort=price"

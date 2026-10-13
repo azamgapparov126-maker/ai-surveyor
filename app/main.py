@@ -194,6 +194,12 @@ def startup():
             print(f"части продуктов: {_res['rows']} строк по {_res['products']} продуктам")
     except Exception as e:                 # расчёт идёт прежним путём (rate_text и min_rates)
         print("части продуктов не заведены:", e)
+    try:                                   # учебная строка цены 1 м² (Ташкент / магазин) для затратного метода, если нет
+        from . import valuation as _val
+        with db.tx() as _con:
+            _val.build_cost_seed(_con)
+    except Exception as e:
+        print("цена 1 м² не заведена:", e)
     try:                                   # актуарный отчёт 2022 → actuarial_reports, если таблица пуста
         from . import actuarial
         actuarial.ensure_loaded()

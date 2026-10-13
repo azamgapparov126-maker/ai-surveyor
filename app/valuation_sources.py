@@ -637,7 +637,7 @@ def analog_url(brand: str, model: str, year: Optional[int], page: int, base: str
     url = "/".join(p for p in parts if p) + "/"
     q = []
     if year:
-        q.append("year[from]=%d" % int(year))
+        q.append("year%%5Bfrom%%5D=%d" % int(year))   # скобки кодируем: с сырыми «[]» сайт из некоторых сетей отвечает 404
     if page > 1:
         q.append("page=%d" % int(page))
     return url + ("?" + "&".join(q) if q else "")
