@@ -1342,3 +1342,728 @@ def latest_by_object(object_type: str, brand: str = None, model: str = None, yea
         raise HTTPException(404, "Оценок по этому объекту ещё нет")
     v["object_key"] = key
     return v
+
+
+# =========================================================================== #
+#         О Ц Е Н К А   V   (ТЗ разработчику 13.10.2026, раздел 3, дни 5–6)    #
+# =========================================================================== #
+#
+# Одна структура результата для всех методов — act_json.valuation:
+#   {method, V, range {low, high}, n, reliability, reliability_pct, source {name, url, urls}, date, formula,
+#    steps, warnings, settings {version, date}, calibrated, currency}
+#   method: analogs — аналоги avtoelon.uz (ТС и спецтехника); depreciation — износ без аналогов (запасной);
+#           exchange — биржевая цена VWAP (грузы и запасы, кл. 7 и 9); cost — затратный метод (здания).
+# Все константы — act_settings.valuation (версия и дата), значения по умолчанию — act_engine.DEFAULT_SETTINGS.
+# Экспертно, calibrated = 0.
+
+VAL_METHODS = ("analogs", "depreciation", "exchange", "cost")
+RELIABILITY = ("high", "medium", "low")
+RELIABILITY_RU = {"high": "высокая", "medium": "средняя", "low": "низкая"}
+MATERIALS = ("reinforced_concrete", "brick", "sandwich", "adobe", "metal")
+MATERIAL_RU = {"reinforced_concrete": "ж/б", "brick": "кирпич", "sandwich": "сэндвич-панели", "adobe": "сырец",
+               "metal": "металл"}
+
+
+def _fmt(x, nd: int = 0) -> str:
+    """Число с пробелами-разделителями тысяч и запятой: 111 234 567; 0,836."""
+    if x is None:
+        return "—"
+    s = format(float(x), ",.%df" % nd).replace(",", " ").replace(".", ",")
+    return s
+
+
+def val_settings(con=None, custom: Optional[dict] = None) -> dict:
+    """Настройки оценки: act_settings.valuation (последняя версия) поверх значений по умолчанию."""
+    from . import act_engine as ae
+    if custom is None and con is not None:
+        try:
+            r = con.execute("SELECT settings_json FROM act_settings ORDER BY id DESC LIMIT 1").fetchone()
+            custom = json.loads(r[0]) if r and r[0] else {}
+        except Exception:               # таблицы ещё нет — значения по умолчанию
+            custom = {}
+    merged = ae.merge_settings(custom or {})
+    return merged["valuation"]
+
+
+def _settings_tag(vs_: dict) -> dict:
+    return {"version": vs_.get("version"), "date": vs_.get("date"), "key": "act_settings.valuation",
+            "calibrated": int(vs_.get("calibrated") or 0)}
+
+
+# ---------- курс ЦБ ----------
+
+def fx_for_valuation(con, as_of, network: bool = True) -> dict:
+    """
+    Курс доллара для цен аналогов в у.е. Порядок: ручной курс заказчика (valuation_settings.fx_rate_manual) →
+    курс ЦБ РУз из базы (stat_series fx_rates, набор ЦБ на data.egov.uz) не старше 7 дней → курс ЦБ на дату с cbu.uz
+    (если network) → последний курс ЦБ из базы с пометкой «устарел». Нет ничего — rate = None.
+    """
+    as_of = to_date(as_of) or date.today()
+    out = {"rate": None, "as_of": as_of.isoformat(), "date": None, "source": None, "stale": False,
+           "disclaimer": FX_DISCLAIMER}
+    manual = setting(con, SETTING_FX_MANUAL)
+    try:
+        mv = float(str(manual).replace(" ", "").replace(",", ".")) if manual not in (None, "") else 0.0
+    except ValueError:
+        mv = 0.0
+    if mv > 0:
+        out.update(rate=mv, date=as_of.isoformat(), by="manual_setting",
+                   source="ручной курс заказчика (valuation_settings.fx_rate_manual)")
+        return out
+    row = None
+    try:
+        r = db.rows(con, "SELECT period, value, url FROM stat_series WHERE dataset_id='fx_rates' AND key='USD' "
+                         "AND period <= ? AND value > 0 ORDER BY period DESC LIMIT 1", as_of.isoformat())
+        row = r[0] if r else None
+    except Exception:
+        row = None
+    fresh = bool(row) and (as_of - to_date(row["period"][:10])).days <= 7
+    if fresh:
+        out.update(rate=float(row["value"]), date=row["period"][:10], by="cbu_db", url=row["url"],
+                   source="курс ЦБ РУз на %s из базы (data.egov.uz, набор fx_rates)"
+                          % to_date(row["period"][:10]).strftime("%d.%m.%Y"))
+        return out
+    if network and vs is not None and hasattr(vs, "cbu_usd_rate"):
+        try:
+            rate = vs.cbu_usd_rate(as_of)
+        except Exception:
+            rate = None
+        if rate:
+            out.update(rate=float(rate), date=as_of.isoformat(), by="cbu", url=vs.CBU_URL % as_of.isoformat(),
+                       source="официальный курс ЦБ РУз на %s (cbu.uz)" % as_of.strftime("%d.%m.%Y"))
+            return out
+    if row:
+        d = to_date(row["period"][:10])
+        out.update(rate=float(row["value"]), date=d.isoformat(), by="cbu_db", url=row["url"], stale=True,
+                   source="курс ЦБ РУз на %s из базы (data.egov.uz, набор fx_rates) — свежего курса нет, "
+                          "курс старше 7 дней" % d.strftime("%d.%m.%Y"))
+        return out
+    out["reason"] = "курса нет: ни ручного курса, ни курса ЦБ в базе, сеть к cbu.uz не использовалась"
+    return out
+
+
+# ---------- ТС: аналоги ----------
+
+def vehicle_years(year, as_of) -> int:
+    """Возраст для нормы пробега: календарных лет с года выпуска, не меньше 1."""
+    as_of = to_date(as_of) or date.today()
+    try:
+        return max(1, as_of.year - int(year))
+    except (TypeError, ValueError):
+        return 1
+
+
+def k_mileage(mileage, unit: Optional[str], years: float, vs_: dict) -> dict:
+    """K_пробег = clip(1 − sens·(пробег/норма − 1); lo; hi); норма = годовая норма × лет (км или моточасы)."""
+    v = vs_["vehicle"]
+    lo, hi = float(v["mileage_clip"][0]), float(v["mileage_clip"][1])
+    hours = (unit or "").lower() in ("hours", "h", "моточасы", "мч")
+    per_year = float(v["engine_hours_norm"] if hours else v["mileage_norm_km"])
+    if mileage in (None, "") or years <= 0:
+        return {"k": 1.0, "mileage": None, "unit": "hours" if hours else "km", "norm": None,
+                "note": "пробег не указан — K_пробег = 1"}
+    norm = per_year * years
+    raw = 1 - float(v["mileage_sens"]) * (float(mileage) / norm - 1)
+    k = min(hi, max(lo, raw))
+    return {"k": round(k, 4), "raw": round(raw, 4), "mileage": float(mileage), "unit": "hours" if hours else "km",
+            "norm": round(norm), "per_year": per_year, "years": years, "clipped": abs(raw - k) > 1e-9}
+
+
+def k_condition(condition: Optional[str], vs_: dict) -> dict:
+    kc = vs_["vehicle"]["k_condition"]
+    if condition in kc:
+        return {"k": float(kc[condition]), "condition": condition}
+    return {"k": 1.0, "condition": condition, "note": "состояние не указано — K_сост = 1"}
+
+
+def iqr_filter(values: list, k: float) -> dict:
+    """Выбросы вне [Q1 − k·IQR; Q3 + k·IQR] (квартили — линейная интерполяция)."""
+    q1, _, q3 = quantiles(values)
+    if q1 is None:
+        return {"kept": [], "cut": [], "low": None, "high": None, "q1": None, "q3": None}
+    iqr = q3 - q1
+    low, high = q1 - k * iqr, q3 + k * iqr
+    kept = [x for x in values if low - 1e-6 <= x <= high + 1e-6]
+    cut = [x for x in values if not (low - 1e-6 <= x <= high + 1e-6)]
+    return {"kept": kept, "cut": cut, "low": low, "high": high, "q1": q1, "q3": q3}
+
+
+def reliability_of(q1: float, q3: float, V: float, vs_: dict) -> tuple:
+    """(уровень, %): (Q3 − Q1)/V ≤ первый порог — высокая, ≤ второй — средняя, иначе низкая."""
+    if not V:
+        return "low", None
+    pct = (q3 - q1) / V * 100
+    hi, mid = [float(x) for x in vs_["vehicle"]["reliability_pct"]]
+    return ("high" if pct <= hi + 1e-9 else "medium" if pct <= mid + 1e-9 else "low"), round(pct, 1)
+
+
+def sv_warning(S: Optional[float], V: Optional[float], vs_: dict) -> Optional[dict]:
+    """«Страховая сумма — 135 % от рынка»: S вне нормы sv_band относительно рыночной оценки V."""
+    if not S or not V:
+        return None
+    pct = S / V * 100
+    lo, hi = [float(x) for x in vs_["sv_band"]]
+    if lo - 1e-9 <= pct <= hi + 1e-9:
+        return None
+    return {"code": "sv_over" if pct > hi else "sv_under", "pct": round(pct),
+            "text": "Страховая сумма %s сум — %d %% от рынка (%s сум): %s" % (
+                _fmt(S), round(pct), _fmt(V),
+                "перестрахование, сумма сверх стоимости недействительна (ГК ст. 938)" if pct > hi
+                else "недострахование, выплата пропорционально (ГК ст. 936)")}
+
+
+def analog_value(analogs: list, *, as_of=None, year=None, mileage=None, mileage_unit: Optional[str] = None,
+                 condition: Optional[str] = None, sum_insured: Optional[float] = None, vs_: dict,
+                 source: Optional[dict] = None, fx: Optional[dict] = None) -> dict:
+    """
+    V = median(P × bargain × k_market × K_пробег × K_сост) по аналогам без выбросов (IQR). P — цена объявления в сумах.
+    Меньше min_analogs аналогов — available = false (нужен запасной метод). Надёжность — (Q3 − Q1)/V.
+    """
+    v = vs_["vehicle"]
+    as_of = to_date(as_of) or date.today()
+    priced = [a for a in analogs if a.get("price_uzs")]
+    no_uzs = len(analogs) - len(priced)
+    flt = iqr_filter([float(a["price_uzs"]) for a in priced], float(v["iqr_k"]))
+    kept_set = list(flt["kept"])
+    kept, cut = [], []
+    for a in priced:
+        p = float(a["price_uzs"])
+        if p in kept_set:
+            kept_set.remove(p)
+            kept.append(a)
+        else:
+            cut.append(a)
+    years = vehicle_years(year, as_of)
+    km = k_mileage(mileage, mileage_unit, years, vs_)
+    kc = k_condition(condition, vs_)
+    mult = float(v["bargain"]) * float(v["k_market"]) * km["k"] * kc["k"]
+    adj = [float(a["price_uzs"]) * mult for a in kept]
+    base = {"method": "analogs", "available": False, "n": len(kept), "n_found": len(analogs),
+            "n_cut": len(cut), "currency": "UZS", "date": as_of.isoformat(), "settings": _settings_tag(vs_),
+            "source": source or {"name": "avtoelon.uz"}, "fx": fx, "calibrated": 0, "warnings": [],
+            "cut": [{"price": a.get("price"), "currency": a.get("currency"), "price_uzs": a.get("price_uzs"),
+                     "url": a.get("url")} for a in cut],
+            "bounds": {"low": round(flt["low"]) if flt["low"] is not None else None,
+                       "high": round(flt["high"]) if flt["high"] is not None else None}}
+    if no_uzs:
+        base["warnings"].append("%d аналогов без цены в сумах (нет курса) — в расчёт не вошли" % no_uzs)
+    if len(kept) < int(v["min_analogs"]):
+        base["reason"] = ("аналогов после отсева выбросов %d, а нужно не меньше %d"
+                          % (len(kept), int(v["min_analogs"])))
+        return base
+    q1, med, q3 = quantiles(adj)
+    V = round(med)
+    rel, rel_pct = reliability_of(q1, q3, med, vs_)
+    pm = quantiles([float(a["price_uzs"]) for a in kept])[1]
+    formula = ("V = median(P · %s · %s · K_mil · K_cond) = %s · %s · %s · %s · %s = %s"
+               % (_fmt(v["bargain"], 2), _fmt(v["k_market"], 2), _fmt(pm), _fmt(v["bargain"], 2),
+                  _fmt(v["k_market"], 2), _fmt(km["k"], 4), _fmt(kc["k"], 2), _fmt(V)))
+    steps = [
+        "Аналогов найдено %d, с ценой в сумах %d; выбросы вне [%s; %s] сум отсечены: %d (%s)." % (
+            len(analogs), len(priced), _fmt(flt["low"]), _fmt(flt["high"]), len(cut),
+            ", ".join("%s %s" % (_fmt(a.get("price")), "у.е." if a.get("currency") == "USD" else "сум")
+                      for a in cut) or "нет"),
+        "В расчёте %d аналогов; медиана цены объявления P = %s сум." % (len(kept), _fmt(pm)),
+        "Торг × %s, поправка рынка × %s (раздел 3 ТЗ), K_пробег = %s%s, K_сост = %s%s." % (
+            _fmt(v["bargain"], 2), _fmt(v["k_market"], 2), _fmt(km["k"], 4),
+            (" (пробег %s %s при норме %s за %d лет)" % (_fmt(km["mileage"]), "моточасов" if km["unit"] == "hours"
+                                                          else "км", _fmt(km["norm"]), years))
+            if km.get("norm") else " (пробег не указан)",
+            _fmt(kc["k"], 2), (" (%s)" % condition) if condition else " (состояние не указано)"),
+        "V = %s сум; Q1 = %s, Q3 = %s; надёжность (Q3 − Q1)/V = %s %% — %s." % (
+            _fmt(V), _fmt(q1), _fmt(q3), _fmt(rel_pct, 1), RELIABILITY_RU[rel]),
+    ]
+    if fx and fx.get("rate"):
+        steps.append("Курс: 1 доллар = %s сум, %s." % (_fmt(fx["rate"], 2), fx.get("source")))
+        if fx.get("stale"):
+            base["warnings"].append("курс доллара старше 7 дней — проверьте курс ЦБ на дату договора")
+    base.update(available=True, V=V, range={"low": round(q1), "high": round(q3)}, reliability=rel,
+                reliability_pct=rel_pct, formula=formula, steps=steps, median_price=round(pm),
+                k={"bargain": float(v["bargain"]), "k_market": float(v["k_market"]), "mileage": km,
+                   "condition": kc},
+                analogs=[{"price": a.get("price"), "currency": a.get("currency"), "price_uzs": a.get("price_uzs"),
+                          "year": a.get("year"), "mileage_km": a.get("mileage_km"), "published": a.get("published"),
+                          "url": a.get("url")} for a in kept])
+    w = sv_warning(sum_insured, V, vs_)
+    if w:
+        base["warnings"].append(w["text"])
+        base["sv_warning"] = w
+    return base
+
+
+def depreciation_value(price_new: float, year, as_of=None, *, vs_: dict, sum_insured: Optional[float] = None,
+                       source: Optional[dict] = None) -> dict:
+    """
+    Износ ТС без аналогов (запасной метод): первый год first_year_pct, далее next_years_pct в год (геометрически),
+    не ниже floor_pct цены нового. V = P_new × max(floor; (1 − f1) × (1 − f2)^(лет − 1)).
+    """
+    d = vs_["depreciation"]
+    as_of = to_date(as_of) or date.today()
+    try:
+        years = max(0, as_of.year - int(year))
+    except (TypeError, ValueError):
+        years = 0
+    f1, f2, fl = float(d["first_year_pct"]) / 100, float(d["next_years_pct"]) / 100, float(d["floor_pct"]) / 100
+    share = 1.0 if years == 0 else (1 - f1) * (1 - f2) ** (years - 1)
+    floor_applied = share < fl
+    share = max(share, fl)
+    V = round(float(price_new) * share)
+    out = {"method": "depreciation", "available": True, "V": V, "range": None, "n": 0, "reliability": "low",
+           "reliability_pct": None, "currency": "UZS", "date": as_of.isoformat(), "settings": _settings_tag(vs_),
+           "source": source or {"name": "цена нового (ввод сотрудника)"}, "calibrated": 0, "warnings": [],
+           "formula": "V = P_new · max(%s; (1 − %s) · (1 − %s)^(T − 1)) = %s · %s = %s" % (
+               _fmt(fl, 2), _fmt(f1, 2), _fmt(f2, 2), _fmt(price_new), _fmt(share, 4), _fmt(V)),
+           "steps": ["Аналогов нет — запасной метод: износ %s %% в первый год, далее %s %% в год, не ниже %s %% "
+                     "цены нового." % (_fmt(f1 * 100), _fmt(f2 * 100), _fmt(fl * 100)),
+                     "Лет с выпуска: %d; остаток %s %%%s." % (years, _fmt(share * 100, 1),
+                                                              " (сработал минимум)" if floor_applied else "")],
+           "years": years, "share": round(share, 4), "floor_applied": floor_applied}
+    w = sv_warning(sum_insured, V, vs_)
+    if w:
+        out["warnings"].append(w["text"])
+        out["sv_warning"] = w
+    return out
+
+
+def vehicle_valuation(con, *, brand: str, model: str, year, as_of=None, mileage=None, mileage_unit=None,
+                      condition=None, sum_insured=None, price_new=None, object_type: str = "авто",
+                      subtype: Optional[str] = None, pages: Optional[list] = None, network_fx: bool = True,
+                      keep_html: bool = False, fx: Optional[dict] = None) -> dict:
+    """Аналоги avtoelon.uz → V; меньше минимума — износ от цены нового (если она есть). Результат — act_json.valuation."""
+    vs_ = val_settings(con)
+    v = vs_["vehicle"]
+    as_of = to_date(as_of) or date.today()
+    fx = fx or fx_for_valuation(con, as_of, network=network_fx)
+    base_url = getattr(vs, "AVTOELON_CARS", "https://avtoelon.uz/avto")
+    if object_type == OBJECT_SPECIAL:
+        path = spec_section(subtype or "")
+        if not path:
+            raw = {"status": "источник недоступен", "analogs": [], "urls": [],
+                   "reason": "подтип спецтехники не указан или не найден в разделах сайта"}
+        else:
+            base_url = SPEC_BASE_URL.rstrip("/") + "/" + path
+    if object_type != OBJECT_SPECIAL or spec_section(subtype or ""):
+        if vs is None or not hasattr(vs, "fetch_avtoelon_analogs"):
+            raw = {"status": "источник недоступен", "analogs": [], "urls": [],
+                   "reason": "модуль адаптеров недоступен"}
+        else:
+            raw = vs.fetch_avtoelon_analogs(brand, model, year, as_of, fx.get("rate"), max_pages=int(v["max_pages"]),
+                                            target=int(v["analogs_target"]), year_tolerance=int(v["year_tolerance"]),
+                                            base=base_url, pages=pages, keep_html=keep_html)
+    source = {"name": "avtoelon.uz", "url": (raw.get("urls") or [base_url])[0], "urls": raw.get("urls") or [],
+              "status": raw.get("status"), "reason": raw.get("reason"), "fetched_at": raw.get("fetched_at"),
+              "offline": raw.get("offline"), "dropped": raw.get("dropped"), "limitations": raw.get("limitations")}
+    res = analog_value(raw.get("analogs") or [], as_of=as_of, year=year, mileage=mileage, mileage_unit=mileage_unit,
+                       condition=condition, sum_insured=sum_insured, vs_=vs_, source=source, fx=fx)
+    res["object"] = {"brand": brand, "model": model, "year": year, "object_type": object_type, "subtype": subtype,
+                     "mileage": mileage, "mileage_unit": mileage_unit, "condition": condition}
+    if not res.get("available") and price_new:
+        dep = depreciation_value(price_new, year, as_of, vs_=vs_, sum_insured=sum_insured)
+        dep["fallback_reason"] = res.get("reason") or raw.get("reason")
+        dep["analogs_tried"] = {k: res.get(k) for k in ("n", "n_found", "n_cut", "source")}
+        dep["object"] = res["object"]
+        res = dep
+    elif not res.get("available"):
+        res["reason"] = (res.get("reason") or raw.get("reason") or "аналогов нет") + \
+            "; для запасного метода (износ) нужна цена нового"
+    if keep_html:
+        res["_html"] = raw.get("html") or []
+    return res
+
+
+# ---------- биржа: VWAP ----------
+
+def exchange_value(con, *, groups: list, quantity: float, unit: str, as_of=None, vs_: dict,
+                   sum_insured: Optional[float] = None) -> dict:
+    """
+    V = Q · Σp·q / Σq по сделкам exchange_quotes за days дней (< min_deals — за fallback_days). Группа — первая из
+    groups, у которой есть сделки в единице unit. Количество и единица — ввод сотрудника (optional.quantity, unit).
+    """
+    from . import uzex
+    ex = vs_["exchange"]
+    as_of = to_date(as_of) or date.today()
+    tried = []
+    for g in groups:
+        w = uzex.vwap(con, g, unit, days=int(ex["days"]), as_of=as_of.isoformat())
+        period = int(ex["days"])
+        if w["deals"] < int(ex["min_deals"]):
+            w2 = uzex.vwap(con, g, unit, days=int(ex["fallback_days"]), as_of=as_of.isoformat())
+            if w2["deals"] > w["deals"]:
+                w, period = w2, int(ex["fallback_days"])
+        tried.append({"group": g, "deals": w["deals"], "days": period})
+        if not w["deals"] or not w.get("vwap"):
+            continue
+        Qn = float(quantity) * w["qty_factor"]
+        V = round(Qn * w["vwap"])
+        rel, rel_pct = reliability_of(w["q1"], w["q3"], w["vwap"], vs_)
+        out = {"method": "exchange", "available": True, "V": V, "currency": "UZS", "date": as_of.isoformat(),
+               "range": {"low": round(Qn * w["q1"]), "high": round(Qn * w["q3"])}, "n": w["deals"],
+               "reliability": rel, "reliability_pct": rel_pct, "settings": _settings_tag(vs_), "calibrated": 0,
+               "source": {"name": uzex.us.SOURCE_NAME, "url": w["url"], "group": g,
+                          "group_label": uzex.us.group_label(g)},
+               "period": {"from": w["from"], "to": w["to"], "days": period, "fallback": period != int(ex["days"])},
+               "quantity": {"value": float(quantity), "unit": unit, "normalized": round(Qn, 6),
+                            "unit_norm": w["unit"]},
+               "vwap": round(w["vwap"], 2), "volume": w["volume"],
+               "formula": "V = Q · Σ(p·q) / Σq = %s %s · %s сум = %s" % (
+                   _fmt(Qn, 3), w["unit"], _fmt(w["vwap"], 2), _fmt(V)),
+               "steps": ["Биржевая цена (VWAP) группы «%s»: %d сделок за %d дней (%s — %s), объём %s %s." % (
+                   uzex.us.group_label(g), w["deals"], period, w["from"], w["to"], _fmt(w["volume"], 3), w["unit"]),
+                   "Цены биржи — оптовые, франко-склад продавца, без доставки и наценки."],
+               "warnings": [], "tried": tried}
+        if period != int(ex["days"]):
+            out["warnings"].append("за %d дней сделок меньше %d — взят период %d дней"
+                                   % (int(ex["days"]), int(ex["min_deals"]), period))
+        sw = sv_warning(sum_insured, V, vs_)
+        if sw:
+            out["warnings"].append(sw["text"])
+            out["sv_warning"] = sw
+        return out
+    return {"method": "exchange", "available": False, "tried": tried, "date": as_of.isoformat(),
+            "reason": "сделок биржи по группам %s в единице «%s» за %d дней нет"
+                      % (", ".join(groups) or "—", unit, int(ex["fallback_days"]))}
+
+
+# ---------- здания: затратный метод ----------
+
+BUILD_COST_SQL = """CREATE TABLE IF NOT EXISTS build_cost_m2 (
+    id            INTEGER PRIMARY KEY,
+    region        TEXT NOT NULL,          -- код региона экрана (tashkent_city) или название, как ввёл администратор
+    building_type TEXT NOT NULL,          -- вид здания: код вида объекта акта (shop) или название (магазин)
+    price_m2      REAL NOT NULL,          -- цена строительства 1 м², сум
+    date          TEXT NOT NULL,          -- на какую дату цена
+    source        TEXT NOT NULL,          -- откуда цена (учебная строка — так и написано)
+    created_at    TEXT NOT NULL,
+    created_by    TEXT,
+    UNIQUE (region, building_type, date)
+)"""
+
+
+def ensure_build_cost(con) -> None:
+    con.execute(BUILD_COST_SQL)
+
+
+def _fold(s) -> str:
+    return " ".join(str(s or "").replace("ё", "е").lower().split())
+
+
+def _region_keys(region: Optional[str]) -> set:
+    """Код и названия региона на трёх языках — для сопоставления строки справочника с регионом акта."""
+    keys = {_fold(region)}
+    try:
+        from .act_pkg.regions import region_code
+        from . import i18n
+        code = region_code(region or "")
+        if code:
+            keys.add(code)
+            for lg in i18n.LANGS:
+                keys.add(_fold(i18n.t("tg.act.reg." + code, lg)))
+    except Exception:
+        pass
+    keys.discard("")
+    return keys
+
+
+def _type_keys(building_type: Optional[str]) -> set:
+    keys = {_fold(building_type)}
+    try:
+        from .act_texts import OBJECT_KINDS
+        for code, (label, names) in OBJECT_KINDS.items():
+            vals = {code, _fold(label)} | {_fold(x) for x in (names or {}).values()}
+            if keys & vals:
+                keys |= vals
+    except Exception:
+        pass
+    keys.discard("")
+    return keys
+
+
+def build_cost_lookup(con, region: Optional[str], building_type: Optional[str], as_of=None) -> Optional[dict]:
+    """Строка build_cost_m2 по региону и виду здания: самая свежая на дату as_of (или раньше)."""
+    ensure_build_cost(con)
+    as_of = (to_date(as_of) or date.today()).isoformat()
+    rk, tk = _region_keys(region), _type_keys(building_type)
+    best = None
+    for r in db.rows(con, "SELECT * FROM build_cost_m2 WHERE date <= ? ORDER BY date DESC, id DESC", as_of):
+        if (_region_keys(r["region"]) & rk) and (_type_keys(r["building_type"]) & tk):
+            best = r
+            break
+    return best
+
+
+def cost_value(*, area: float, price_row: dict, material: str, age_years: Optional[float], vs_: dict,
+               sum_insured: Optional[float] = None, as_of=None, building_type: Optional[str] = None) -> dict:
+    """V = A · C · K_констр · (1 − min(wear_cap; T/T_сл) · k_wear). T неизвестен — износ не учитывается (пометка)."""
+    b = vs_["building"]
+    as_of = to_date(as_of) or date.today()
+    kc = float(b["k_construction"].get(material, b["k_construction"].get("brick", 1.0)))
+    t_sl = float(b["service_life"].get(material, b["service_life"].get("brick", 80)))
+    T = float(age_years) if age_years is not None else 0.0
+    wear = min(float(b["wear_cap"]), T / t_sl) * float(b["k_wear"])
+    C = float(price_row["price_m2"])
+    V = round(float(area) * C * kc * (1 - wear))
+    out = {"method": "cost", "available": True, "V": V, "currency": "UZS", "date": as_of.isoformat(),
+           "range": None, "n": 1, "reliability": None, "reliability_pct": None,
+           "settings": _settings_tag(vs_), "calibrated": 0,
+           "source": {"name": "build_cost_m2: %s" % price_row["source"], "table": "build_cost_m2",
+                      "row_id": price_row["id"], "region": price_row["region"],
+                      "building_type": price_row["building_type"], "price_date": price_row["date"]},
+           "inputs": {"area_m2": float(area), "price_m2": C, "material": material, "k_construction": kc,
+                      "age_years": age_years, "service_life": t_sl, "wear_cap": float(b["wear_cap"]),
+                      "k_wear": float(b["k_wear"]), "wear": round(wear, 4), "building_type": building_type},
+           "formula": "V = A · C · K_constr · (1 − min(%s; T/T_sl) · K_w) = %s · %s · %s · (1 − min(%s; %s/%s) · %s)"
+                      " = %s" % (_fmt(b["wear_cap"], 1), _fmt(area, 1), _fmt(C), _fmt(kc, 2), _fmt(b["wear_cap"], 1),
+                                 _fmt(T), _fmt(t_sl), _fmt(b["k_wear"], 2), _fmt(V)),
+           "steps": ["Цена строительства 1 м² — %s сум (%s, %s, на %s)." % (
+               _fmt(C), price_row["region"], price_row["building_type"], price_row["date"]),
+               "Материал: %s, K_констр = %s, срок службы %s лет; возраст %s лет → износ %s %%." % (
+                   MATERIAL_RU.get(material, material), _fmt(kc, 2), _fmt(t_sl),
+                   _fmt(T) if age_years is not None else "не указан", _fmt(wear * 100, 1))],
+           "warnings": []}
+    if age_years is None:
+        out["warnings"].append("год постройки не указан — износ не учтён (T = 0), оценка завышена")
+    if float(b["k_wear"]) == 1.0:
+        out["steps"].append("Множитель износа K_w = 1,00: индекс последнего K формулы ТЗ в PDF не читается — "
+                            "значение подтверждает заказчик.")
+    w = sv_warning(sum_insured, V, vs_)
+    if w:
+        out["warnings"].append(w["text"])
+        out["sv_warning"] = w
+    return out
+
+
+# ---------- S/V по оценке ----------
+
+SV_TEXT = {
+    "normal": {"ru": "S/V = {r} %: в норме ({lo}–{hi} %)", "uz": "S/V = {r} %: me'yorda ({lo}–{hi} %)",
+               "en": "S/V = {r} %: within the norm ({lo}–{hi} %)"},
+    "under": {"ru": "S/V = {r} %: недострахование — выплата пропорционально (ГК ст. 936)",
+              "uz": "S/V = {r} %: to'liq sug'urtalanmagan — to'lov mutanosib (FK 936-modda)",
+              "en": "S/V = {r} %: underinsurance — claims paid pro rata (Civil Code art. 936)"},
+    "over": {"ru": "S/V = {r} %: перестрахование — сумма сверх стоимости недействительна (ГК ст. 938)",
+             "uz": "S/V = {r} %: qiymatdan ortiq sug'urta — ortiqcha qism haqiqiy emas (FK 938-modda)",
+             "en": "S/V = {r} %: over-insurance — the excess over value is void (Civil Code art. 938)"},
+}
+SV_LABEL = {"normal": "норма", "under": "недострахование", "over": "перестрахование"}
+
+
+def sv_check(S: float, V: float, vs_: dict, settings: Optional[dict] = None) -> dict:
+    """S/V с выводом по ГК ст. 936/938 (act_engine.value_check с нормой valuation.sv_band)."""
+    from . import act_engine as ae
+    band = [float(x) for x in vs_["sv_band"]]
+    vc = ae.value_check(float(S), float(V), settings, band=band)
+    r = _fmt(vc["ratio_pct"], 1)
+    lo, hi = _fmt(band[0]), _fmt(band[1])
+    vc.update(S=S, V=V, band=band, label=SV_LABEL[vc["verdict"]],
+              legal_ref=("ГК РУз, ст. 938" if vc["verdict"] == "over" else
+                         "ГК РУз, ст. 936" if vc["verdict"] == "under" else None),
+              text={lg: SV_TEXT[vc["verdict"]][lg].format(r=r, lo=lo, hi=hi) for lg in ("ru", "uz", "en")},
+              actions=["accept_market", "keep_with_note"] if vc["verdict"] != "normal" else [])
+    return vc
+
+
+# ---------- оценка для акта ----------
+
+BUILDING_KINDS = ("warehouse", "shop", "production", "office", "dwelling", "hotel")
+
+
+def _stored(con, vid: int) -> Optional[dict]:
+    r = db.rows(con, "SELECT * FROM valuations WHERE id=?", int(vid))
+    if not r:
+        return None
+    try:
+        ex = json.loads(r[0]["explanation"] or "{}")
+    except ValueError:
+        return None
+    u = ex.get("valuation") if isinstance(ex, dict) else None
+    if not isinstance(u, dict):
+        return None
+    return dict(u, valuation_id=int(vid))
+
+
+def for_act(con, *, cls: str, group: Optional[str], kind: Optional[str], m: dict, o: dict, facts: dict,
+            text: str = "", settings: Optional[dict] = None, today=None) -> tuple:
+    """
+    Оценка V для акта и проверка S/V. Возвращает (valuation | None, value_sv | None).
+    Порядок: сохранённая оценка (optional.valuation_id, POST /valuation/vehicle) → биржа (кл. 7 и 9 с количеством)
+    → затратный метод (здание) → износ ТС от цены нового. В сеть не ходит.
+    """
+    vs_ = (settings or {}).get("valuation") or val_settings(con)
+    today = to_date(today) or date.today()
+    S = m.get("sum_insured")
+    val = None
+    if o.get("valuation_id"):
+        val = _stored(con, o["valuation_id"])
+        if val is None:
+            val = {"method": None, "available": False, "valuation_id": o["valuation_id"],
+                   "reason": "оценка №%s не найдена" % o["valuation_id"]}
+    if val is None and o.get("quantity") and o.get("unit") and str(cls) in [str(x) for x in
+                                                                           vs_["exchange"]["classes"]]:
+        from . import act_analytics as aa
+        groups, _basis = aa.exchange_groups(cls, kind, o.get("class_fields"), text, o.get("object_type"))
+        val = exchange_value(con, groups=groups, quantity=o["quantity"], unit=o["unit"], as_of=today, vs_=vs_,
+                             sum_insured=S) if groups else \
+            {"method": "exchange", "available": False, "reason": "вид товара не распознан — группа биржи не выбрана"}
+    building = group == "property" or kind in BUILDING_KINDS or o.get("building_type") or o.get("material")
+    if val is None and building and str(cls) in ("8", "9") and facts.get("area_m2"):
+        from .act_pkg.regions import region_for_modules
+        btype = o.get("building_type") or kind
+        row = build_cost_lookup(con, m.get("region_code") or m.get("region"), btype, today)
+        if row is None:
+            row = build_cost_lookup(con, region_for_modules(m), btype, today)
+        material = o.get("material") or (vs_["building"].get("from_construction") or {}).get(o.get("construction"))
+        if row is None:
+            val = {"method": "cost", "available": False, "code": "no_price_m2",
+                   "reason": "нет цены 1 м² для региона «%s» и вида здания «%s» (справочник build_cost_m2)"
+                             % (m.get("region") or "—", btype or "—")}
+        elif not material:
+            val = {"method": "cost", "available": False, "code": "no_material",
+                   "reason": "не указан материал стен (optional.material: %s)" % ", ".join(MATERIALS)}
+        else:
+            yb = o.get("year")
+            age = max(0, today.year - int(yb)) if yb else None
+            val = cost_value(area=facts["area_m2"], price_row=row, material=material, age_years=age, vs_=vs_,
+                             sum_insured=S, as_of=today, building_type=btype)
+    if val is None and group in ("vehicle", "special") and o.get("price_new") and (o.get("year") or
+                                                                                   o.get("purchase_year")):
+        val = depreciation_value(o["price_new"], o.get("year") or o.get("purchase_year"), today, vs_=vs_,
+                                 sum_insured=S)
+    if val is None:
+        return None, None
+    val.setdefault("settings", _settings_tag(vs_))
+    sv = sv_check(S, val["V"], vs_, settings) if val.get("available") and S and val.get("V") else None
+    return val, sv
+
+
+# ---------- точки подключения ----------
+
+class VehicleIn(BaseModel):
+    brand: str
+    model: Optional[str] = None
+    year: int
+    mileage: Optional[float] = None
+    mileage_unit: Optional[str] = "km"          # km | hours
+    condition: Optional[str] = None             # new | good | worn | damaged
+    sum_insured: Optional[float] = None
+    price_new: Optional[float] = None
+    as_of: Optional[str] = None
+    object_type: str = "авто"                   # авто | спецтехника
+    subtype: Optional[str] = None               # для спецтехники: экскаватор, автокран…
+    request_id: Optional[int] = None
+    save: bool = True
+
+
+@router.post("/valuation/vehicle")
+def valuation_vehicle(body: VehicleIn):
+    """
+    Оценка ТС и спецтехники по аналогам avtoelon.uz (ТЗ 13.10.2026 п. 5.1): живой запрос по марке, модели и году
+    (только адреса, разрешённые robots.txt: ?year[from]=, ?page=; пауза ≥ 2 с), курс ЦБ, поправки раздела 3.
+    Ответ — act_json.valuation; id сохранённой оценки передаётся в /act/make как optional.valuation_id.
+    """
+    if body.object_type not in ("авто", OBJECT_SPECIAL):
+        raise HTTPException(422, "object_type: авто или спецтехника")
+    if body.object_type == "авто" and not (body.model or "").strip():
+        raise HTTPException(422, "для легкового и грузового авто нужна модель")
+    if body.mileage_unit not in (None, "km", "hours"):
+        raise HTTPException(422, "mileage_unit: km или hours")
+    if body.condition not in (None, "", "new", "good", "worn", "damaged"):
+        raise HTTPException(422, "condition: new, good, worn или damaged")
+    this = date.today().year
+    if not 1950 <= int(body.year) <= this + 1:
+        raise HTTPException(422, "year: от 1950 до %d" % (this + 1))
+    with db.tx() as con:
+        res = vehicle_valuation(con, brand=body.brand, model=body.model or "", year=body.year, as_of=body.as_of,
+                                mileage=body.mileage, mileage_unit=body.mileage_unit, condition=body.condition or None,
+                                sum_insured=body.sum_insured, price_new=body.price_new, object_type=body.object_type,
+                                subtype=body.subtype)
+        if body.save:
+            params = {"brand": body.brand, "model": body.model, "year": body.year, "mileage": body.mileage,
+                      "mileage_unit": body.mileage_unit, "condition": body.condition, "subtype": body.subtype,
+                      "as_of": res.get("date")}
+            params["object_key"] = object_key(body.object_type, params)
+            method = {"analogs": "объявления", "depreciation": "износ"}.get(res.get("method"))
+            cur = con.execute(
+                """INSERT INTO valuations (created_at,created_by,request_id,object_type,params_json,declared_value,
+                   ai_value,method,method_version,spread_json,explanation) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (db.now(), "api", body.request_id, body.object_type, json.dumps(params, ensure_ascii=False),
+                 body.sum_insured, res.get("V"), method, "tz-2026-10-13/" + str(res["settings"]["version"]),
+                 json.dumps(res.get("range"), ensure_ascii=False) if res.get("range") else None,
+                 json.dumps({"valuation": res}, ensure_ascii=False, default=str)))
+            res["valuation_id"] = cur.lastrowid
+            db.audit(con, "api", "оценка ТС по аналогам", "valuation:%s" % cur.lastrowid,
+                     {"method": res.get("method"), "V": res.get("V"), "n": res.get("n")})
+    return res
+
+
+class BuildCostIn(BaseModel):
+    region: str
+    building_type: str
+    price_m2: float
+    date: str
+    source: str
+
+
+@router.get("/reference/build-cost")
+def build_cost_list(region: Optional[str] = None, building_type: Optional[str] = None):
+    """Цены строительства 1 м² по регионам и видам зданий (затратный метод, ТЗ 13.10.2026 п. 6.2)."""
+    with db.tx() as con:
+        ensure_build_cost(con)
+        rows = db.rows(con, "SELECT * FROM build_cost_m2 ORDER BY region, building_type, date DESC")
+    if region:
+        rk = _region_keys(region)
+        rows = [r for r in rows if _region_keys(r["region"]) & rk]
+    if building_type:
+        tk = _type_keys(building_type)
+        rows = [r for r in rows if _type_keys(r["building_type"]) & tk]
+    return {"items": rows, "count": len(rows), "unit": "сум за 1 м²",
+            "note": "ручной ввод администратора; учебные строки помечены в источнике"}
+
+
+@router.put("/reference/build-cost")
+def build_cost_put(body: BuildCostIn, user: dict = Depends(auth.require("админ"))):
+    """Строка цены 1 м²: новая или правка той же (регион, вид, дата). Только администратор."""
+    if not (0 < body.price_m2 < 1e10):
+        raise HTTPException(422, "price_m2: число больше нуля")
+    d = to_date(body.date)
+    for k in ("region", "building_type", "source"):
+        if not str(getattr(body, k) or "").strip() or len(str(getattr(body, k))) > 200:
+            raise HTTPException(422, "%s: строка до 200 знаков" % k)
+    with db.tx() as con:
+        out = build_cost_save(con, body.region.strip(), body.building_type.strip(), body.price_m2, d.isoformat(),
+                              body.source.strip(), user.get("login") or "админ")
+    return out
+
+
+def build_cost_save(con, region: str, building_type: str, price_m2: float, date_: str, source: str,
+                    who: str = "админ") -> dict:
+    ensure_build_cost(con)
+    old = db.rows(con, "SELECT * FROM build_cost_m2 WHERE region=? AND building_type=? AND date=?",
+                  region, building_type, date_)
+    con.execute("""INSERT INTO build_cost_m2 (region, building_type, price_m2, date, source, created_at, created_by)
+                   VALUES (?,?,?,?,?,?,?) ON CONFLICT(region, building_type, date) DO UPDATE SET
+                   price_m2=excluded.price_m2, source=excluded.source, created_at=excluded.created_at,
+                   created_by=excluded.created_by""",
+                (region, building_type, float(price_m2), date_, source, db.now(), who))
+    row = db.rows(con, "SELECT * FROM build_cost_m2 WHERE region=? AND building_type=? AND date=?",
+                  region, building_type, date_)[0]
+    db.audit(con, who, "цена 1 м² изменена" if old else "цена 1 м² добавлена", "build_cost_m2:%s" % row["id"],
+             {"было": old[0]["price_m2"] if old else None, "стало": float(price_m2)})
+    return {"ok": True, "item": row}
+
+
+# Учебная строка (ТЗ 13.10.2026, раздел 2: «цена 1 м² — ручной ввод, 1 строка на регион и тип»). Цена вымышленная,
+# для проверки затратного метода; настоящую цену вводит администратор.
+TRAINING_ROW = {"region": "tashkent_city", "building_type": "shop", "price_m2": 6_500_000, "date": "2026-10-13",
+                "source": "учебная строка (вымышленная цена для проверки, заменить ценой заказчика)"}
+
+
+def build_cost_seed(con) -> dict:
+    """Учебная строка Ташкент / магазин, если её ещё нет (правку администратора не перетирает)."""
+    ensure_build_cost(con)
+    r = TRAINING_ROW
+    have = db.rows(con, "SELECT id FROM build_cost_m2 WHERE region=? AND building_type=? AND date=?",
+                   r["region"], r["building_type"], r["date"])
+    if have:
+        return {"ok": True, "created": False, "id": have[0]["id"]}
+    out = build_cost_save(con, r["region"], r["building_type"], r["price_m2"], r["date"], r["source"], "учебная")
+    return {"ok": True, "created": True, "id": out["item"]["id"]}

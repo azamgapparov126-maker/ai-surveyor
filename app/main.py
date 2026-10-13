@@ -429,6 +429,11 @@ def reference(name: str, request: Request, year: Optional[str] = None):
         # актуарный отчёт по субпортфелям (app/actuarial.py, ТЗ 13.10.2026 день 2.3): только администратор
         from . import actuarial
         return actuarial.respond_list(request, year)
+    if name == "build-cost":
+        # цена строительства 1 м² (app/valuation.py, ТЗ 13.10.2026 день 6.2): затратный метод оценки зданий
+        from . import valuation
+        q = request.query_params
+        return valuation.build_cost_list(q.get("region"), q.get("building_type"))
     if name not in REF_SQL:
         raise HTTPException(404, "Нет такого справочника")
     with db.tx() as con:

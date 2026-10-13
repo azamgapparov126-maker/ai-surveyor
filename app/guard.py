@@ -128,9 +128,12 @@ GUEST_POST_EXACT = {"/calculate", "/osgor/quick", "/osgor/assess", "/legal/ask",
                     # сюрвейерский акт, лёгкая версия (app/act.py): фото и формирование акта
                     "/act/photos", "/act/make",
                     # оценка по объявлениям: снимки экрана сотрудника (лимит по файлам — в app/act.py)
-                    "/act/market/shots"}
+                    "/act/market/shots",
+                    # оценка ТС по аналогам avtoelon.uz (ТЗ 13.10.2026, п. 5.1): лимит — бакет analysis
+                    "/valuation/vehicle"}
 # отправка своего акта ботом (app/act.py): владельца и подпись Telegram проверяет обработчик
-GUEST_POST_RE = re.compile(r"/act/[0-9a-f]{16}/send")
+# решение по S/V своего акта (ТЗ 13.10.2026, п. 5.2): владельца проверяет обработчик
+GUEST_POST_RE = re.compile(r"/act/[0-9a-f]{16}/(send|value-decision)")
 GUEST_PUT_EXACT = {"/analytics/risk/last"}             # свой последний выбор формы, без сумм и ПД
 GUEST_DELETE_PREFIX = ("/analytics/risk/document/",)   # удалить свой файл раньше срока
 
@@ -147,6 +150,7 @@ GUEST_BUCKET = {
     ("POST", "/chat/message"): "legal",
     # /act/photos здесь не считаем: app/act.py считает фото гостя по числу файлов (limits.guest_photos_per_hour)
     ("POST", "/act/make"): "analysis",
+    ("POST", "/valuation/vehicle"): "analysis",
 }
 # страницы, на которых гостю выдаётся cookie заранее: файл он загрузит уже с ней
 GUEST_COOKIE_PATHS = {"/tg", "/tg/me", "/tg/auth", "/tg/status"}
@@ -179,7 +183,9 @@ ADMIN_METHOD_PATH = {("POST", "/valuation/norms"), ("DELETE", "/valuation/norms"
                      ("PUT", "/claims/yearly"),             # итоги по году и продукту — ручной ввод (06.10.2026)
                      # ТЗ 13.10.2026, день 2: импорт частей продуктов и правка актуарного отчёта
                      ("POST", "/reference/product-parts/import"), ("POST", "/reference/product-parts/import/apply"),
-                     ("PUT", "/reference/actuarial-reports")}
+                     ("PUT", "/reference/actuarial-reports"),
+                     # ТЗ 13.10.2026, день 6.2: цена строительства 1 м² (затратный метод) — ручной ввод администратора
+                     ("PUT", "/reference/build-cost")}
 # то же по началу пути: у удаления нормы износа код в адресе (/valuation/norms/{code}),
 # и точное совпадение из ADMIN_METHOD_PATH его не ловило
 ADMIN_METHOD_PREFIX = {("DELETE", "/valuation/norms/"),

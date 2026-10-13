@@ -16,7 +16,7 @@ from .. import act_engine as ae
 from .. import class_templates as ctpl
 from .. import act_market as am
 from .. import act_texts as tx
-from .. import db, guest
+from .. import db, guest, llm
 from ..act_texts import t
 
 from .common import (ACT_TTL_SEC, ADMIN, current_custom, DIR, ensure_tables, _fail, GUEST_PHOTOS, _iso, _lang,
@@ -222,7 +222,8 @@ def act_make(request: Request, body: dict = Body(...)):
         con.execute("INSERT INTO acts (id, owner_key, user_id, lang, tariff_version_id, settings_id, act_json, "
                     "created_at, expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
                     (aid, owner, (user or {}).get("id") or 0, lang, D.get("tariff_version_id"),
-                     D.get("settings_id"), json.dumps({"meta": meta, "data": D}, ensure_ascii=False, default=str),
+                     D.get("settings_id"), json.dumps({"meta": meta, "data": D, "input": clean},
+                                                       ensure_ascii=False, default=str),
                      meta["created_at"], meta["expires_at"]))
         db.audit(con, _who(user, owner), "акт сформирован", f"act:{aid}",
                  {"product": D["must"]["product_code"], "class": D["must"]["class_code"],
@@ -245,6 +246,87 @@ def act_make(request: Request, body: dict = Body(...)):
                   "borrower_checks": [c["code"] for c in (D.get("borrower") or {}).get("checks") or []]})
         for e in D.get("block_errors") or []:
             db.audit(con, _who(user, owner), "акт: блок не посчитан", f"act:{aid}", e)
+    return _reply(request, out)
+
+
+@router.post("/act/{aid}/value-decision")
+def act_value_decision(request: Request, aid: str, body: dict = Body(...)):
+    """
+    Решение по S/V (ТЗ 13.10.2026, п. 5.2) — новая версия акта:
+      accept_market = true  — «Принять рыночную»: S = V (и стоимость объекта = V), акт пересчитывается (премия);
+      accept_market = false — «Оставить с пояснением»: S прежняя, пояснение note (обязательно) попадает в акт.
+    Прежняя версия остаётся; у новой meta.version + 1 и meta.parent = id прежней.
+    """
+    got = _load_act(request, aid)
+    if not got:
+        return _fail(request, t("not_found", _lang(request, (body or {}).get("lang"))), 404)
+    D, meta, row = got
+    if not isinstance(body, dict) or not isinstance(body.get("accept_market"), bool):
+        return _fail(request, "accept_market: true или false", 422)
+    note = str(body.get("note") or "").strip()
+    accept = body["accept_market"]
+    if not accept and not note:
+        return _fail(request, "для решения «Оставить с пояснением» нужно пояснение (note)", 422)
+    if len(note) > 500:
+        return _fail(request, "пояснение — не длиннее 500 знаков", 422)
+    if note and llm.has_pd(note):
+        return _fail(request, "пояснение — без персональных данных (ФИО, телефон, паспорт, ИНН)", 422)
+    val, sv = D.get("valuation") or {}, D.get("value_sv")
+    if not val.get("available") or not val.get("V") or not sv:
+        return _fail(request, "в акте нет рыночной оценки V — решать нечего", 409)
+    stored = json.loads(row["act_json"])
+    user = _user(request)
+    owner = row["owner_key"]
+    lang = _lang(request, body.get("lang") or row["lang"])
+    V = float(val["V"])
+    before = {"sum_insured": D["must"]["sum_insured"], "object_value": D["must"]["object_value"],
+              "premium": (D.get("premium_final") or {}).get("amount"), "sv_ratio_pct": sv.get("ratio_pct"),
+              "sv_verdict": sv.get("verdict")}
+    with db.tx() as con:
+        ensure_tables(con)
+        if accept:
+            clean = stored.get("input")
+            if not isinstance(clean, dict):
+                return _fail(request, "акт сформирован до 13.10.2026 без входных данных — пересчёт невозможно, "
+                                      "сформируйте акт заново", 409)
+            if clean.get("parts") or clean.get("objects") or len(clean["must"].get("product_classes") or []) > 1:
+                return _fail(request, "у договора из частей или парка объектов S = V принимается по каждому "
+                                      "объекту отдельно — сформируйте акт заново с новыми суммами", 409)
+            clean = json.loads(json.dumps(clean))
+            clean["must"]["sum_insured"] = round(V)
+            clean["must"]["object_value"] = round(V)
+            o = clean.setdefault("optional", {})
+            if o.get("deductible") and o["deductible"].get("amount"):
+                o["deductible"] = None          # франшиза суммой считалась от прежней S — сотрудник задаст заново
+            D2 = build_data(con, clean, owner, lang)
+        else:
+            clean = stored.get("input")
+            D2 = json.loads(json.dumps(D))
+        after = {"sum_insured": D2["must"]["sum_insured"], "object_value": D2["must"]["object_value"],
+                 "premium": (D2.get("premium_final") or {}).get("amount"),
+                 "sv_ratio_pct": (D2.get("value_sv") or {}).get("ratio_pct"),
+                 "sv_verdict": (D2.get("value_sv") or {}).get("verdict")}
+        D2["value_decision"] = {"accept_market": accept, "label": "Принять рыночную" if accept
+                                else "Оставить с пояснением", "note": note or None, "V": round(V),
+                                "method": val.get("method"), "before": before, "after": after,
+                                "previous_act": aid, "at": _iso(_now()), "by": _who(user, owner)}
+        nid = secrets.token_hex(8)
+        now = _now()
+        ver = int(meta.get("version") or 1) + 1
+        meta2 = {"id": nid, "created_at": _iso(now), "expires_at": _iso(now + timedelta(seconds=ACT_TTL_SEC)),
+                 "number": "%s/%d" % (str(meta.get("number") or _number(aid, meta["created_at"])).split("/")[0], ver),
+                 "version": ver, "parent": aid}
+        out = render(D2, lang, meta2)
+        con.execute("INSERT INTO acts (id, owner_key, user_id, lang, tariff_version_id, settings_id, act_json, "
+                    "created_at, expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (nid, owner, (user or {}).get("id") or 0, lang, D2.get("tariff_version_id"),
+                     D2.get("settings_id"),
+                     json.dumps({"meta": meta2, "data": D2, "input": clean}, ensure_ascii=False, default=str),
+                     meta2["created_at"], meta2["expires_at"]))
+        db.audit(con, _who(user, owner), "акт: решение по S/V", f"act:{nid}",
+                 {"parent": aid, "version": ver, "accept_market": accept, "V": round(V),
+                  "S_before": before["sum_insured"], "S_after": after["sum_insured"],
+                  "premium_before": before["premium"], "premium_after": after["premium"]})
     return _reply(request, out)
 
 

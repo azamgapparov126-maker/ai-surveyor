@@ -337,6 +337,15 @@ def validate_contract(ct: Any, inclusive: bool = True) -> tuple:
                 return None, "items.sum — число больше нуля и не больше 10^14 сумов"
             name = _s(x.get("name"), 200)
             out["items"].append({"name": name if name and not pd_like("object_type", name) else None, "sum": a})
+    # выгодоприобретатель (день 7.2, проверка 12): только название юрлица; гражданин — без имени (ПД не берём)
+    bf = ct.get("beneficiary")
+    bname = _s(bf.get("name") if isinstance(bf, dict) else bf, 120)
+    if bname and br.is_legal(bname) and not pd_like("beneficiary", bname):
+        out["beneficiary"] = {"kind": "legal", "name": bname}
+    elif bname or (isinstance(bf, dict) and bf.get("kind") == "individual"):
+        out["beneficiary"] = {"kind": "individual", "name": None}
+    else:
+        out["beneficiary"] = None
     if all(out[k] in (None, []) for k in ("tariff_pct", "premium", "franchise", "term_days", "sum_insured",
                                           "contract_no", "object_description", "covered_risks", "payments")):
         return None, "в договоре нет ни одного условия"

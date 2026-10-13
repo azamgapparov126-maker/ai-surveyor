@@ -286,6 +286,8 @@ _FR_RISK = re.compile(r"(?:по\s+риск\w*|по\s+страховому\s+ри
                       r"хавфи\s+бўйича|xavfi\s+bo'yicha|for\s+(?:the\s+)?(?:risk|peril)\s+(?:of\s+)?)\s*[«\"]?"
                       r"([^;,.»\"]{3,60})", re.I)
 _CODE = re.compile(r"(?<!\d)(\d{3,4})(?!\d)")
+# код продукта в названии вида страхования: «Имущество в залоге (код 0801)», «… kodi 0801», «product code 0801»
+_CODE_IN_NAME = re.compile(r"(?i)(?:код|kod|kodi|коди|code)\s*[:№]?\s*(\d{4})(?!\d)")
 _CONTRACT_NO = re.compile(r"(?:№|(?<!\w)N[o°º]\.?|(?<!\w)No\.?|(?<!\w)raqami|(?<!\w)рақами|(?<!\w)number)\s*:?\s*"
                           r"([A-Za-zА-Яа-яЁёЎўҚқҒғҲҳ0-9][\w\-/.]{0,38}[\w])|(?:№|(?<!\w)N[o°º]\.?)\s*:?\s*(\d)", re.I)
 
@@ -990,9 +992,14 @@ def _contract_no(doc: _Doc, title: Optional[str]) -> Optional[str]:
                                          if len(raw) <= 200 and not _NOT_HEAD.search(f)
                                          and any(w in f for w in ("dogovor", "polis", "shartnoma", "contract",
                                                                   "policy"))]
+    # PDF: номер перенесён на следующую строку («… В ЗАЛОГЕ №» / «INS-0801/045»); мягкий перенос — дефис
+    for i, raw in enumerate(doc.head[:10]):
+        if re.search(r"(?:№|(?<!\w)No\.?)\s*$", raw) and i + 1 < len(doc.head) and not _NOT_HEAD.search(doc.head_F[i]):
+            cands.append(raw.rstrip() + " " + doc.head[i + 1].strip().split(" ")[0])
     for raw in cands:
         if not raw:
             continue
+        raw = raw.replace("­", "-")
         m = _CONTRACT_NO.search(raw)
         if m:
             no = (m.group(1) or m.group(2) or "").strip(" .,")
@@ -1511,7 +1518,7 @@ def fields(raw: dict, inclusive: bool = True) -> dict:
             pays.append({"date": d.isoformat(), "amount": amt})
     mode = str(raw.get("payment_mode") or "").strip().lower()
     mode = mode if mode in ("single", "installments") else ("installments" if len(pays) >= 2 else None)
-    code = _CODE.search(g("product_code") or "")
+    code = _CODE.search(g("product_code") or "") or _CODE_IN_NAME.search(g("product_name") or "")
     party = {k: _party_of(raw.get(k)) for k in PARTY_CODES}
     notice = g("notice")
     ct = _iso(raw.get("contract_date"))
@@ -1710,7 +1717,42 @@ def request_of(f: dict, source: str) -> dict:
                object_description=f.get("object_description"),
                covered_risks=risk_list(f.get("covered_risks")), exclusions=risk_list(f.get("exclusions")),
                payment_mode=f.get("payment_mode"), payments=list(f.get("payments") or []),
-               items=list(f.get("items") or []))
+               items=list(f.get("items") or []),
+               # выгодоприобретатель — только название юрлица (банк → проверка 12 сверки договора)
+               beneficiary=_legal_party(f.get("beneficiary")))
+    return out
+
+
+def _legal_party(p) -> Optional[dict]:
+    """Сторона для акта: юрлицо — {kind, name}; гражданин — {kind: individual} без имени; нет — None."""
+    p = p or {}
+    if p.get("kind") == "legal" and p.get("name"):
+        return {"kind": "legal", "name": str(p["name"])[:120]}
+    return {"kind": "individual", "name": None} if p.get("kind") == "individual" else None
+
+
+# условия договора → поля осмотра (ТЗ 13.10.2026, день 7.1): поле экрана, откуда в разборе договора
+CONDITION_KEYS = ("product_code", "sum_insured", "object_value", "tariff_pct", "premium", "term_from", "term_to",
+                  "term_days", "franchise", "covered_risks", "policyholder", "beneficiary", "region")
+
+
+def conditions(f: dict) -> list:
+    """Найденные условия договора для полей осмотра: [{field, value}] с пометкой «из договора» у вызывающего.
+    Суммы — только в сумах; стороны — только название юрлица (у гражданина имени нет: ПД не извлекаются)."""
+    out = []
+    uzs = f.get("currency") in (None, "UZS")
+    for k in CONDITION_KEYS:
+        v = f.get(k)
+        if k in ("sum_insured", "object_value", "premium") and not uzs:
+            continue
+        if k in PARTY_CODES:
+            v = (_legal_party(v) or {}).get("name")
+        elif k == "franchise":
+            v = {x: (v or {}).get(x) for x in ("applied", "text", "pct", "amount", "type")} if v else None
+        elif k == "covered_risks":
+            v = risk_list(v) or None
+        if v not in (None, "", [], {}):
+            out.append({"field": k, "value": v})
     return out
 
 

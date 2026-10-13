@@ -1030,3 +1030,16 @@ def exchange_background(con, cls, object_kind: Optional[str] = None, parts: Opti
     out.update(available=True, items=items, groups_requested=wanted,
                period={"days": int(days), "to": as_of or date.today().isoformat()})
     return out
+
+
+def exchange_groups(cls, object_kind: Optional[str], class_fields: Optional[dict], *text) -> tuple:
+    """
+    Группы товаров биржи для оценки стоимости груза или запасов (ТЗ 13.10.2026, п. 6.1, app/valuation.for_act):
+    тот же выбор, что у справки биржи (_exchange_wanted). Класс 9 без признаков склада — как склад: количество
+    товара указано, значит страхуются запасы. (группы, основание выбора).
+    """
+    tx_ = _exchange_text(class_fields, *text)
+    gs, basis = _exchange_wanted(str(cls or ""), object_kind, class_fields or {}, tx_)
+    if not gs and str(cls) == "9":
+        gs, basis = _exchange_wanted("9", "warehouse", class_fields or {}, tx_)
+    return gs, basis

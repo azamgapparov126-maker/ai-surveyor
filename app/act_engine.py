@@ -37,6 +37,7 @@ import re
 from datetime import date
 from typing import Optional
 
+from . import contract_check as cck
 from . import rate_model as rm
 from .engine import CAT_PERILS, NEGOTIATED_MODES, STATUTORY_MODE, Input, min_rate, premium_of, rate_for
 
@@ -174,6 +175,36 @@ DEFAULT_SETTINGS = {
                     "yur_only_fields": ["turnover_or_payroll", "employees", "contract_share"],
                     "yur_only_clauses": ["lb_employer_payroll"],
                     "yur_only_measures": ["gl_safety"]},
+    # оценка стоимости V (ТЗ 13.10.2026, раздел 3 и дни 5–6; app/valuation.py). Экспертно, calibrated = 0.
+    #   vehicle  — аналоги avtoelon.uz: V = median(P × bargain × k_market × K_пробег × K_сост) по аналогам без выбросов
+    #              вне [Q1 − iqr_k·IQR; Q3 + iqr_k·IQR]; K_пробег = clip(1 − mileage_sens·(пробег/норма − 1); clip);
+    #              норма = mileage_norm_km (или engine_hours_norm моточасов) × лет; минимум min_analogs; надёжность
+    #              (Q3 − Q1)/V: ≤ reliability_pct[0] — высокая, ≤ [1] — средняя, иначе низкая; year_tolerance — допуск
+    #              года аналога; max_pages, analogs_target — сколько страниц выдачи и аналогов собирать;
+    #   depreciation — износ без аналогов: first_year_pct в первый год, далее next_years_pct в год (геометрически),
+    #              не ниже floor_pct цены нового;
+    #   sv_band  — S/V в процентах: внутри — норма; ниже — недострахование (ГК ст. 936), выше — перестрахование (ст. 938);
+    #   exchange — VWAP биржи по exchange_quotes: days дней, при сделок < min_deals — fallback_days; классы classes;
+    #   building — затратный метод V = A · C · K_констр · (1 − min(wear_cap; T/T_сл) · k_wear); k_wear — множитель
+    #              износа (в ТЗ индекс не читается — 1,00 до ответа заказчика).
+    "valuation": {
+        "version": "1.0", "date": "2026-10-13",
+        "vehicle": {"bargain": 0.95, "k_market": 0.88, "mileage_norm_km": 20000, "engine_hours_norm": 1500,
+                    "mileage_sens": 0.15, "mileage_clip": [0.85, 1.15],
+                    "k_condition": {"new": 1.0, "good": 1.0, "worn": 0.95, "damaged": 0.80},
+                    "iqr_k": 1.5, "min_analogs": 3, "reliability_pct": [15, 30], "year_tolerance": 0,
+                    "max_pages": 15, "analogs_target": 20, "window_months": 6},
+        "depreciation": {"first_year_pct": 20, "next_years_pct": 12, "floor_pct": 15},
+        "sv_band": [90, 110],
+        "exchange": {"days": 30, "fallback_days": 90, "min_deals": 3, "classes": ["7", "9"]},
+        "building": {"k_construction": {"reinforced_concrete": 1.15, "brick": 1.00, "sandwich": 0.70, "adobe": 0.55},
+                     "service_life": {"reinforced_concrete": 100, "brick": 80, "metal": 50, "sandwich": 50,
+                                      "adobe": 80, "equipment": 12},
+                     "wear_cap": 0.7, "k_wear": 1.0,
+                     # прежнее поле «конструкция» акта → материал затратного метода (когда material не указан)
+                     "from_construction": {"reinforced": "reinforced_concrete", "mixed": "brick"}},
+        "calibrated": 0,
+    },
     # пределы загрузки и распознавания (app/act.py): защита сервера, а не тариф
     "limits": {
         "max_image_mp": 50,             # картинка больше стольких мегапикселей отклоняется до раскрытия
@@ -224,6 +255,8 @@ MARKET_FLAGS = ("allow_undated",)       # флаги оценки по объя�
 # load — доля расходов L по субпортфелям (актуарный отчёт 2022, временно). Экспертно, calibrated = 0.
 DEFAULT_SETTINGS.setdefault("rate_model", rm.DEFAULTS)
 DEFAULT_SETTINGS.setdefault("load", rm.LOAD_DEFAULTS)
+# сверка договора с актом — 12 проверок (ТЗ 13.10.2026, день 7.2, app/contract_check.py): пороги с версией и датой
+DEFAULT_SETTINGS.setdefault("contract_check", cck.DEFAULTS)
 
 VIEWS = ("front", "back", "left", "right", "plate", "odometer", "document", "interior", "facade", "roof",
          "electrical", "fire_safety", "general", "installation", "packaging", "marking", "transport", "other")
@@ -954,11 +987,13 @@ def wear_kind(group: str, object_type: str = "") -> str:
 
 def value_check(sum_insured: float, value: float, settings: Optional[dict] = None,
                 price_new: Optional[float] = None, purchase_year: Optional[int] = None,
-                group: str = "other", object_type: str = "", today: Optional[date] = None) -> dict:
+                group: str = "other", object_type: str = "", today: Optional[date] = None,
+                band: Optional[list] = None) -> dict:
     """Отношение суммы к стоимости (ТЗ 8.3): 90–100 % в норме; < 90 % недострахование (ГК ст. 936);
-    > 100 % превышение (ГК ст. 938). Ниже 100 %, но не ниже 90 % — в норме, но доля выплаты та же."""
+    > 100 % превышение (ГК ст. 938). Ниже 100 %, но не ниже 90 % — в норме, но доля выплаты та же.
+    band — свои границы нормы в процентах (S/V к рыночной оценке V, ТЗ 13.10.2026 п. 5.2: valuation.sv_band 90–110)."""
     st = merge_settings(settings)
-    lo, hi = st["value_ok_pct"]
+    lo, hi = band if band else st["value_ok_pct"]
     ratio = sum_insured / value * 100
     if ratio > hi + 1e-9:
         verdict, ref = "over", "ГК РУз, ст. 938"
@@ -1341,7 +1376,68 @@ def check_settings(s: dict) -> list:
     errs += check_clock_settings(m.get("clock"))
     errs += check_facts_settings(m.get("object_facts"))
     errs += check_client_type_settings(m.get("client_type"))
+    errs += check_valuation_settings(m.get("valuation"))
     errs += rm.check_settings(m)
+    errs += cck.check_settings(m)
+    return errs
+
+
+def _num(v, lo, hi) -> bool:
+    return not isinstance(v, bool) and isinstance(v, (int, float)) and lo <= v <= hi
+
+
+def check_valuation_settings(vs) -> list:
+    """Оценка стоимости (ТЗ 13.10.2026, раздел 3): числа в разумных пределах, version и date — строки."""
+    if not isinstance(vs, dict):
+        return ["valuation: словарь {version, date, vehicle, depreciation, sv_band, exchange, building}"]
+    errs = []
+    extra = [k for k in vs if k not in ("version", "date", "vehicle", "depreciation", "sv_band", "exchange",
+                                        "building", "calibrated")]
+    if extra:
+        errs.append("valuation: неизвестные ключи " + ", ".join(extra))
+    for k in ("version", "date"):
+        if not isinstance(vs.get(k), str) or not vs.get(k):
+            errs.append(f"valuation.{k}: строка")
+    v = vs.get("vehicle") if isinstance(vs.get("vehicle"), dict) else {}
+    for key, lo, hi in (("bargain", 0.5, 1), ("k_market", 0.5, 1.2), ("mileage_norm_km", 1000, 200000),
+                        ("engine_hours_norm", 100, 8760), ("mileage_sens", 0, 1), ("iqr_k", 0.5, 5),
+                        ("min_analogs", 1, 50), ("year_tolerance", 0, 5), ("max_pages", 1, 50),
+                        ("analogs_target", 1, 200), ("window_months", 1, 24)):
+        if not _num(v.get(key), lo, hi):
+            errs.append(f"valuation.vehicle.{key}: число от {lo} до {hi}")
+    clip = v.get("mileage_clip")
+    if not isinstance(clip, list) or len(clip) != 2 or not all(_num(x, 0.1, 3) for x in clip) or clip[0] > clip[1]:
+        errs.append("valuation.vehicle.mileage_clip: [от, до], 0,1 ≤ от ≤ до ≤ 3")
+    rel = v.get("reliability_pct")
+    if not isinstance(rel, list) or len(rel) != 2 or not all(_num(x, 0, 500) for x in rel) or rel[0] > rel[1]:
+        errs.append("valuation.vehicle.reliability_pct: [высокая до, средняя до], проценты")
+    kc = v.get("k_condition")
+    if not isinstance(kc, dict) or not kc or not all(_num(x, 0.1, 2) for x in kc.values()):
+        errs.append("valuation.vehicle.k_condition: словарь {состояние: коэффициент 0,1–2}")
+    d = vs.get("depreciation") if isinstance(vs.get("depreciation"), dict) else {}
+    for key in ("first_year_pct", "next_years_pct", "floor_pct"):
+        if not _num(d.get(key), 0, 100):
+            errs.append(f"valuation.depreciation.{key}: процент от 0 до 100")
+    sv = vs.get("sv_band")
+    if not isinstance(sv, list) or len(sv) != 2 or not all(_num(x, 1, 300) for x in sv) or sv[0] > sv[1]:
+        errs.append("valuation.sv_band: [от, до] в процентах")
+    ex = vs.get("exchange") if isinstance(vs.get("exchange"), dict) else {}
+    for key, lo, hi in (("days", 1, 365), ("fallback_days", 1, 730), ("min_deals", 1, 100)):
+        if not _num(ex.get(key), lo, hi):
+            errs.append(f"valuation.exchange.{key}: число от {lo} до {hi}")
+    if not isinstance(ex.get("classes"), list) or not all(isinstance(x, str) for x in ex.get("classes") or [None]):
+        errs.append("valuation.exchange.classes: список кодов классов")
+    b = vs.get("building") if isinstance(vs.get("building"), dict) else {}
+    for key, lo, hi in (("k_construction", 0.1, 3), ("service_life", 1, 300)):
+        dd = b.get(key)
+        if not isinstance(dd, dict) or not dd or not all(_num(x, lo, hi) for x in dd.values()):
+            errs.append(f"valuation.building.{key}: словарь чисел от {lo} до {hi}")
+    if not _num(b.get("wear_cap"), 0, 1):
+        errs.append("valuation.building.wear_cap: доля от 0 до 1")
+    if not _num(b.get("k_wear"), 0, 3):
+        errs.append("valuation.building.k_wear: число от 0 до 3")
+    if not isinstance(b.get("from_construction"), dict):
+        errs.append("valuation.building.from_construction: словарь")
     return errs
 
 

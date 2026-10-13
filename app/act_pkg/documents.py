@@ -337,7 +337,32 @@ def contract_view(ctr: Optional[dict], lang: str) -> Optional[dict]:
             "is_template": False, "template_hint": bool(f.get("template_hint")),
             "blank": _labels(tx.CT_BLANK_LABELS, f.get("blank") or [], lang), "blank_label": t("ct_blank", lang),
             "schedule": _schedule_view(f.get("schedule"), lang),
+            **conditions_view(f, srcs, lang),
             "notes": notes, "check_label": t("prefill_check", lang)}
+
+
+def _cond_label(code: str, lang: str) -> str:
+    for group in (tx.CT_FIELD_LABELS, tx.FIELD_LABELS, tx.EDIT_LABELS):
+        if code in group:
+            return tx.label(group, code, lang)
+    return code
+
+
+def conditions_view(f: dict, srcs: Optional[dict], lang: str) -> dict:
+    """
+    Условия договора для полей осмотра (ТЗ 13.10.2026, день 7.1): conditions — [{field, label, value, source,
+    source_label}] с пометкой «из договора» (дочитанное моделью — ещё «прочитано моделью»); sources — {поле: contract}.
+    ПД не попадают: стороны — только название юрлица (cr.conditions), значения уже очищены ct_clean.
+    """
+    mark = t("from_contract", lang)
+    items = []
+    for c in cr.conditions(f):
+        by_ai = (srcs or {}).get(cr.item_field(c["field"])) == "document_ai" or (
+            c["field"] in ("term_from", "term_to", "term_days") and (srcs or {}).get(c["field"]) == "document_ai")
+        items.append({"field": c["field"], "label": _cond_label(c["field"], lang), "value": c["value"],
+                      "source": "contract", "by_model": by_ai,
+                      "source_label": mark + (" (" + t("by_model_mark", lang) + ")" if by_ai else "")})
+    return {"conditions": items, "sources": {c["field"]: "contract" for c in items}, "source_mark": mark}
 
 
 def _schedule_view(sch: Optional[dict], lang: str) -> Optional[dict]:

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Optional
 
 from .. import act_engine as ae
+from .. import contract_check as cck
 from .. import act_scoring as asc
 from .. import class_templates as ctpl
 from .. import act_market as am
@@ -140,6 +141,13 @@ def render(D: dict, lang: str, meta: dict) -> dict:
         "factor_adjustment": v4.FAV["json"],
         # факты об объекте (13.10.2026): тот же словарь, что получили факторы и аналитика; у старых актов — None
         "object": D.get("object"),
+        # оценка стоимости V (ТЗ 13.10.2026, дни 5–6): {method, V, range, n, reliability, source, date, formula};
+        # S/V к ней с выводом по ГК ст. 936/938 и решение сотрудника (POST /act/{id}/value-decision)
+        "valuation": D.get("valuation"),
+        "value_sv": (dict(D["value_sv"], text=(D["value_sv"].get("text") or {}).get(lang)
+                          or (D["value_sv"].get("text") or {}).get("ru")) if D.get("value_sv") else None),
+        "value_decision": D.get("value_decision"),
+        "version": meta.get("version", 1), "parent_id": meta.get("parent"),
     }
     if ae.model_on(rate_res):
         # модель ставки (задача 4.1): в сводке одна ставка (rate.applied_pct) и rate_trace; вилка, базовая ставка,
@@ -464,6 +472,12 @@ def _render_s4(D: dict, lang: str, PV: Optional[dict], OV: Optional[dict]) -> Si
         # подраздел «Сверка с договором»: итог, строки сверки, риски и исключения, как сверено
         lists4.append({"title": t("ct_title", lang), "items": ccv["lines"]})
         lists4.append({"title": t("ct_how_title", lang), "items": ccv["json"]["how"]})
+    # 12 проверок договора (ТЗ 13.10.2026, день 7.2): в JSON contract_check.checks — и у бланка (сверки нет)
+    c12 = cck.view(D.get("contract_check"), lang)
+    ccv["json"]["checks"], ccv["json"]["checks_summary"] = c12["items"], c12["summary"]
+    ccv["json"]["checks_settings"] = c12["settings"]
+    if c12["available"]:
+        lists4.append({"title": t("cc_title", lang), "items": [c12["summary"]["text"]] + c12["lines"]})
     xv = cross_view(D.get("cross_check"), lang)
     if xv:
         lists4.append({"title": t("x_title", lang), "items": xv["lines"]})

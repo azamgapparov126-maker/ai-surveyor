@@ -1,0 +1,292 @@
+{
+ "method": "analogs",
+ "available": true,
+ "n": 19,
+ "n_found": 20,
+ "n_cut": 1,
+ "currency": "UZS",
+ "date": "2026-10-13",
+ "settings": {
+  "version": "1.0",
+  "date": "2026-10-13",
+  "key": "act_settings.valuation",
+  "calibrated": 0
+ },
+ "source": {
+  "name": "avtoelon.uz",
+  "url": "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022",
+  "urls": [
+   "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022",
+   "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022&page=2",
+   "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022&page=3",
+   "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022&page=4",
+   "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022&page=5",
+   "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022&page=6",
+   "https://avtoelon.uz/avto/chevrolet/cobalt/?year[from]=2022&page=7"
+  ],
+  "status": "ok",
+  "reason": "",
+  "fetched_at": "2026-10-13T22:33:49+05:00",
+  "offline": false,
+  "dropped": {
+   "other_year": 120,
+   "no_year": 0,
+   "stale_or_undated": 0,
+   "no_price": 0,
+   "duplicate": 0
+  },
+  "limitations": [
+   "Дата у объявления — дата последнего обновления (lastUpdate); дату первой публикации выдача не отдаёт.",
+   "Пробег аналога взят из строки описания карточки и показан справочно; поправка по пробегу — по пробегу оцениваемого объекта.",
+   "?year[from]= отбирает машины этого года и новее; точный год аналога отбирается по карточке.",
+   "Цена объявления — цена предложения, а не сделки: в оценке применяется скидка на торг."
+  ]
+ },
+ "fx": {
+  "rate": 11809.82,
+  "as_of": "2026-10-13",
+  "date": "2026-09-22",
+  "source": "курс ЦБ РУз на 22.09.2026 из базы (data.egov.uz, набор fx_rates) — свежего курса нет, курс старше 7 дней",
+  "stale": true,
+  "disclaimer": "источник курса подлежит подтверждению заказчиком (вопрос 33 в docs/Открытые вопросы.md пока открыт)",
+  "by": "cbu_db",
+  "url": "https://data.egov.uz/rus/data/6113bca7db32b99538e0898d"
+ },
+ "calibrated": 0,
+ "warnings": [
+  "курс доллара старше 7 дней — проверьте курс ЦБ на дату договора",
+  "Страховая сумма 150 000 000 сум — 157 % от рынка (95 422 637 сум): перестрахование, сумма сверх стоимости недействительна (ГК ст. 938)"
+ ],
+ "cut": [
+  {
+   "price": 5000.0,
+   "currency": "USD",
+   "price_uzs": 59049100.0,
+   "url": "https://avtoelon.uz/a/show/7578818"
+  }
+ ],
+ "bounds": {
+  "low": 95793879,
+  "high": 132439750
+ },
+ "V": 95422637,
+ "range": {
+  "low": 92806289,
+  "high": 99722333
+ },
+ "reliability": "high",
+ "reliability_pct": 7.2,
+ "formula": "V = median(P · 0,95 · 0,88 · K_mil · K_cond) = 114 141 910 · 0,95 · 0,88 · 1,0000 · 1,00 = 95 422 637",
+ "steps": [
+  "Аналогов найдено 20, с ценой в сумах 20; выбросы вне [95 793 879; 132 439 750] сум отсечены: 1 (5 000 у.е.).",
+  "В расчёте 19 аналогов; медиана цены объявления P = 114 141 910 сум.",
+  "Торг × 0,95, поправка рынка × 0,88 (раздел 3 ТЗ), K_пробег = 1,0000 (пробег не указан), K_сост = 1,00 (состояние не указано).",
+  "V = 95 422 637 сум; Q1 = 92 806 289, Q3 = 99 722 333; надёжность (Q3 − Q1)/V = 7,2 % — высокая.",
+  "Курс: 1 доллар = 11 809,82 сум, курс ЦБ РУз на 22.09.2026 из базы (data.egov.uz, набор fx_rates) — свежего курса нет, курс старше 7 дней."
+ ],
+ "median_price": 114141910,
+ "k": {
+  "bargain": 0.95,
+  "k_market": 0.88,
+  "mileage": {
+   "k": 1.0,
+   "mileage": null,
+   "unit": "km",
+   "norm": null,
+   "note": "пробег не указан — K_пробег = 1"
+  },
+  "condition": {
+   "k": 1.0,
+   "condition": null,
+   "note": "состояние не указано — K_сост = 1"
+  }
+ },
+ "analogs": [
+  {
+   "price": 11000.0,
+   "currency": "USD",
+   "price_uzs": 129908020.0,
+   "year": 2022,
+   "mileage_km": 46000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7606960"
+  },
+  {
+   "price": 10001.0,
+   "currency": "USD",
+   "price_uzs": 118110009.82,
+   "year": 2022,
+   "mileage_km": 120000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7573725"
+  },
+  {
+   "price": 9800.0,
+   "currency": "USD",
+   "price_uzs": 115736236.0,
+   "year": 2022,
+   "mileage_km": 35700.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7597826"
+  },
+  {
+   "price": 9500.0,
+   "currency": "USD",
+   "price_uzs": 112193290.0,
+   "year": 2022,
+   "mileage_km": 61900.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7572613"
+  },
+  {
+   "price": 10500.0,
+   "currency": "USD",
+   "price_uzs": 124003110.0,
+   "year": 2022,
+   "mileage_km": 51000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7559497"
+  },
+  {
+   "price": 9600.0,
+   "currency": "USD",
+   "price_uzs": 113374272.0,
+   "year": 2022,
+   "mileage_km": 170000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7605807"
+  },
+  {
+   "price": 8700.0,
+   "currency": "USD",
+   "price_uzs": 102745434.0,
+   "year": 2022,
+   "mileage_km": 153000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7596773"
+  },
+  {
+   "price": 9700.0,
+   "currency": "USD",
+   "price_uzs": 114555254.0,
+   "year": 2022,
+   "mileage_km": 49000.0,
+   "published": "2026-10-12",
+   "url": "https://avtoelon.uz/a/show/7605324"
+  },
+  {
+   "price": 10000.0,
+   "currency": "USD",
+   "price_uzs": 118098200.0,
+   "year": 2022,
+   "mileage_km": 75000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7601102"
+  },
+  {
+   "price": 9500.0,
+   "currency": "USD",
+   "price_uzs": 112193290.0,
+   "year": 2022,
+   "mileage_km": 110000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7589610"
+  },
+  {
+   "price": 10200.0,
+   "currency": "USD",
+   "price_uzs": 120460164.0,
+   "year": 2022,
+   "mileage_km": 45000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7590361"
+  },
+  {
+   "price": 9000.0,
+   "currency": "USD",
+   "price_uzs": 106288380.0,
+   "year": 2022,
+   "mileage_km": 192000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607532"
+  },
+  {
+   "price": 9665.0,
+   "currency": "USD",
+   "price_uzs": 114141910.3,
+   "year": 2022,
+   "mileage_km": 100000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607471"
+  },
+  {
+   "price": 8800.0,
+   "currency": "USD",
+   "price_uzs": 103926416.0,
+   "year": 2022,
+   "mileage_km": 114000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607447"
+  },
+  {
+   "price": 9200.0,
+   "currency": "USD",
+   "price_uzs": 108650344.0,
+   "year": 2022,
+   "mileage_km": 110000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7590232"
+  },
+  {
+   "price": 10300.0,
+   "currency": "USD",
+   "price_uzs": 121641146.0,
+   "year": 2022,
+   "mileage_km": 58000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7573848"
+  },
+  {
+   "price": 10750.0,
+   "currency": "USD",
+   "price_uzs": 126955565.0,
+   "year": 2022,
+   "mileage_km": 75000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7573727"
+  },
+  {
+   "price": 9300.0,
+   "currency": "USD",
+   "price_uzs": 109831326.0,
+   "year": 2022,
+   "mileage_km": 68000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607185"
+  },
+  {
+   "price": 9600.0,
+   "currency": "USD",
+   "price_uzs": 113374272.0,
+   "year": 2022,
+   "mileage_km": 119.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607130"
+  }
+ ],
+ "sv_warning": {
+  "code": "sv_over",
+  "pct": 157,
+  "text": "Страховая сумма 150 000 000 сум — 157 % от рынка (95 422 637 сум): перестрахование, сумма сверх стоимости недействительна (ГК ст. 938)"
+ },
+ "object": {
+  "brand": "Chevrolet",
+  "model": "Cobalt",
+  "year": 2022,
+  "object_type": "авто",
+  "subtype": null,
+  "mileage": null,
+  "mileage_unit": null,
+  "condition": null
+ }
+}

@@ -77,6 +77,10 @@ def _photos(request, user, owner, lang, files, class_code, product_code, limits,
     cbr, n = _credit_from(saved, parsed, m.rec, m.model_to_id)
     dropped_br += n
     if ctr:
+        # подсказки полей осмотра, взятые из файла договора, — с пометкой «из договора» (день 7.1)
+        for v in prefill.values():
+            if ctr.get("file") and v.get("file") == ctr["file"]:
+                v["doc"] = cr.KIND
         ctr["found"], ctr["missing"] = cr.found_missing(ctr["fields"])
         ctr["essentials"] = cr.essentials(ctr["fields"])
         ctr["ai"] = ct_ai
@@ -531,4 +535,6 @@ def prefill_view(prefill: dict, lang: str) -> dict:
     for k, v in prefill.items():
         mark = t("ct_ai_note", lang) if v.get("source") == "document_ai" else t("prefill_check", lang)
         out[k] = {**v, "label": tx.label(tx.FIELD_LABELS, k, lang), "check_label": mark}
+        if v.get("doc") == cr.KIND:
+            out[k]["source_label"] = t("from_contract", lang)
     return out

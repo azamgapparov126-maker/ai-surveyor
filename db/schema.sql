@@ -1539,3 +1539,19 @@ CREATE TABLE IF NOT EXISTS actuarial_reports (
     updated_by      TEXT,
     PRIMARY KEY (year, subportfolio)
 );
+
+-- ---------------------------------------------------------------------------
+-- Цена строительства 1 м² (ТЗ 13.10.2026, день 6.2; app/valuation.py, GET/PUT /reference/build-cost): затратный метод
+-- оценки зданий V = A · C · K_констр · (1 − min(0,7; T/T_сл) · K). Ручной ввод администратора, 1 строка на регион и вид.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS build_cost_m2 (
+    id            INTEGER PRIMARY KEY,
+    region        TEXT NOT NULL,          -- код региона экрана (tashkent_city) или название, как ввёл администратор
+    building_type TEXT NOT NULL,          -- вид здания: код вида объекта акта (shop) или название (магазин)
+    price_m2      REAL NOT NULL,          -- цена строительства 1 м², сум
+    date          TEXT NOT NULL,          -- на какую дату цена
+    source        TEXT NOT NULL,          -- откуда цена (учебная строка — так и написано)
+    created_at    TEXT NOT NULL,
+    created_by    TEXT,
+    UNIQUE (region, building_type, date)
+);

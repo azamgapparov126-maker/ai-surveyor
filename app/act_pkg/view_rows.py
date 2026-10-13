@@ -2,6 +2,7 @@
 from typing import Optional
 
 from .. import act_engine as ae
+from .. import contract_check as cck
 from .. import act_extras as ax
 from .. import class_templates as ctpl
 from .. import act_market as am
@@ -100,6 +101,8 @@ def _check_text(c: dict, lang: str, group: Optional[str] = None, veh_group: Opti
         return t(c["code"], lang, what=", ".join(tx.label(tx.CT_ESSENTIAL_LABELS, x, lang) for x in p.get("missing") or []))
     if c["code"].startswith("c_ct_"):
         return t(c["code"], lang, **_rq_params(c["code"][2:], p, lang))
+    if c["code"] == "c_cc":                             # сверка договора, 12 проверок (день 7.2)
+        return cck.check_text(c, lang)
     if c["code"] == "c_x":
         return t("c_x", lang, what=", ".join(tx.label(tx.X_LABELS, x, lang).lower() for x in p.get("codes") or []))
     if c["code"] in ("c_tpl_credit_over", "c_part_credit_over", "c_credit_need_data", "c_part_credit_need_data"):

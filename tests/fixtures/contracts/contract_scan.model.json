@@ -1,0 +1,50 @@
+{
+ "files": [
+  {
+   "n": 1,
+   "view": "document",
+   "document_kind": "contract"
+  }
+ ],
+ "fields": [],
+ "damages": [],
+ "contract": {
+  "file": 1,
+  "contract_no": "INS-0808/301",
+  "contract_date": "2026-10-28",
+  "place": "г. Ташкент",
+  "product_name": "Имущество от ущерба (добровольное)",
+  "product_code": "0808",
+  "insurer": {
+   "is_legal": true,
+   "name": "СО АО «INSON»"
+  },
+  "policyholder": {
+   "is_legal": true,
+   "name": "ООО «Учебная торговля»"
+  },
+  "beneficiary": null,
+  "pledger": null,
+  "object": "товары в магазине",
+  "class_hint": "other",
+  "object_value": "950 000 000 сум",
+  "sum_insured": "900 000 000 сум",
+  "currency": "UZS",
+  "tariff": "0,07 %",
+  "premium": "630 000 сум",
+  "payment_mode": null,
+  "payments": [],
+  "term": "с 01.12.2026 по 30.11.2027",
+  "term_from": "2026-12-01",
+  "term_to": "2027-11-30",
+  "franchise": "безусловная, 2 000 000 сум",
+  "franchise_type": "unconditional",
+  "covered_risks": [
+   "кража со взломом",
+   "град",
+   "противоправные действия третьих лиц"
+  ],
+  "exclusions": [],
+  "special_terms": []
+ }
+}

@@ -73,6 +73,7 @@ STATUS_ROBOTS = "запрещено robots.txt"
 
 _last_request: Dict[str, float] = {}
 _robots_cache: Dict[str, Any] = {}          # домен → (правила или None, причина, когда прочитано)
+_robots_text: Dict[str, str] = {}           # домен → текст robots.txt (для проверки шаблонов «*» по RFC 9309)
 ROBOTS_FAIL_TTL_SEC = 600                    # сбой чтения robots.txt не запоминаем навсегда: повтор через 10 минут
 
 _SSL_CTX = ssl.create_default_context()
@@ -167,9 +168,10 @@ def robots_check(url: str) -> tuple:
     # прочитанные правила помним до перезапуска; сбой чтения — только ROBOTS_FAIL_TTL_SEC, потом спрашиваем снова
     if got is not None and (got[0] is not None or time.monotonic() - got[2] < ROBOTS_FAIL_TTL_SEC):
         rp, reason = got[0], got[1]
+        text = _robots_text.get(dom, "")
     else:
         robots_url = "%s://%s/robots.txt" % (scheme, dom)
-        rp, reason = None, ""
+        rp, reason, text = None, "", ""
         try:
             text = _http_get(robots_url, timeout=25)
             rp = urllib.robotparser.RobotFileParser()
@@ -185,11 +187,69 @@ def robots_check(url: str) -> tuple:
         except Exception as e:                       # сеть, таймаут, TLS
             reason = "robots.txt недоступен (%s)" % type(e).__name__
         _robots_cache[dom] = (rp, reason, time.monotonic())
+        _robots_text[dom] = text or ""
     if rp is None:
         return False, reason or "robots.txt недоступен"
-    if rp.can_fetch(USER_AGENT, url) or rp.can_fetch("*", url):
+    return robots_allowed_text(text or "", url, rp)
+
+
+def _rfc_rules(text: str, agent: str) -> List[tuple]:
+    """Правила (allow|disallow, путь) групп, подходящих агенту; своих групп нет — групп «*»."""
+    groups, cur, in_agents = [], None, False
+    for raw in (text or "").splitlines():
+        line = raw.replace("﻿", "").split("#", 1)[0].strip()
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        k, v = k.strip().lower(), v.strip()
+        if k == "user-agent":
+            if not in_agents:
+                cur = {"agents": [], "rules": []}
+                groups.append(cur)
+                in_agents = True
+            cur["agents"].append(v.lower())
+        elif k in ("allow", "disallow"):
+            in_agents = False
+            if cur is not None:
+                cur["rules"].append((k, v))
+    own = [g for g in groups if any(a not in ("", "*") and a in agent.lower() for a in g["agents"])]
+    use = own or [g for g in groups if "*" in g["agents"]]
+    return [r for g in use for r in g["rules"]]
+
+
+def rfc_allowed(text: str, url: str, agent: str = USER_AGENT) -> bool:
+    """
+    RFC 9309: шаблоны со «*» и «$», самое длинное совпадение побеждает, при равной длине — allow.
+    urllib.robotparser шаблонов «*» не понимает (сравнивает начало пути), поэтому у avtoelon.uz правило
+    «Disallow: /*?*» он молча пропускает; эта проверка закрывает разрыв.
+    """
+    sp = urllib.parse.urlsplit(url)
+    path = (sp.path or "/") + ("?" + sp.query if sp.query else "")
+    lp = urllib.parse.unquote(path).lower()
+    best, verdict = -1, True
+    for kind, rule in _rfc_rules(text, agent):
+        if not rule:
+            continue
+        pat = re.escape(rule.lower()).replace(r"\*", ".*")
+        if pat.endswith(r"\$"):
+            pat = pat[:-2] + "$"
+        if re.match(pat, lp):
+            n = len(rule)
+            if n > best or (n == best and kind == "allow"):
+                best, verdict = n, kind == "allow"
+    return verdict
+
+
+def robots_allowed_text(text: str, url: str, rp=None) -> tuple:
+    """(разрешено, причина) по тексту robots.txt: разрешено, только если согласны urllib.robotparser и RFC 9309."""
+    if rp is None:
+        rp = urllib.robotparser.RobotFileParser()
+        rp.parse((text or "").splitlines())
+    a = rp.can_fetch(USER_AGENT, url) or rp.can_fetch("*", url)
+    b = rfc_allowed(text or "", url)
+    if a and b:
         return True, ""
-    return False, "robots.txt домена %s запрещает загрузку %s" % (dom, url)
+    return False, "robots.txt домена %s запрещает загрузку %s" % (_domain(url), url)
 
 
 # --------------------------------------------------------------------------- #
@@ -461,6 +521,10 @@ def _parse_avtoelon(html: str, as_of: date, rate: Optional[float],
             "price_text": re.sub(r"<[^>]+>", " ", m.group("price") or ""),
             "year": int(m.group("year")) if m.group("year") else None,
         }
+    # разбор по блоку карточки (13.10.2026): регулярка выше на живой выдаче цепляла чужой data-id, и год первой
+    # карточки терялся; блок от data-id до следующей карточки надёжнее — из него же берётся пробег
+    for ad_id, c in parse_avtoelon_cards(html).items():
+        cards[ad_id] = {**cards.get(ad_id, {}), **{k: v for k, v in c.items() if v not in (None, "")}}
 
     want_year = params.get("год") or params.get("year")
     try:
@@ -491,7 +555,7 @@ def _parse_avtoelon(html: str, as_of: date, rate: Optional[float],
             amount, currency = float(item["unitPrice"]), "USD"
         if not currency:
             currency = "USD"          # на сайте цены по умолчанию в у.е.
-        rows.append(Sample(
+        smp = Sample(
             title=card.get("title") or "%s %s" % (
                 (item.get("attributes") or {}).get("brand", ""),
                 (item.get("attributes") or {}).get("model", "")),
@@ -500,12 +564,177 @@ def _parse_avtoelon(html: str, as_of: date, rate: Optional[float],
             price_uzs=to_uzs(amount, currency, rate),
             published=pub.isoformat(),
             url=item.get("url") or "",
-        ))
+        )
+        # год и пробег карточки — для отбора аналогов (fetch_avtoelon_analogs); в контракт Sample (asdict) не входят
+        smp.year = card.get("year")
+        smp.mileage_km = card.get("mileage_km")
+        rows.append(smp)
     if no_date:
         res.limitations.append(
             "%d объявлений отброшено: дату получить не удалось (без даты в выборку не берём)." % no_date
         )
     return rows
+
+
+# --------------------------------------------------------------------------- #
+# Аналоги для оценки ТС (ТЗ 13.10.2026, п. 5.1)
+# --------------------------------------------------------------------------- #
+
+_AE_BLOCK = re.compile(r'<div\s+data-id="(\d+)"[^>]*class="[^"]*list-item a-elem[^"]*"', re.S)
+_AE_YEAR = re.compile(r"(?<!\d)((?:19|20)\d{2})\s*г\.")
+_AE_KM = re.compile(r"(\d[\d ]*)\s*км\b")
+_AE_PRICE = re.compile(r"Цена:\s*(~?\s*[\d ]+(?:[.,]\d+)?\s*(?:y\.e\.|у\.е\.|сум|so.m|\$))")
+
+
+def _plain_text(fragment: str) -> str:
+    t = re.sub(r"<[^>]+>", " ", fragment or "")
+    t = t.replace("&nbsp;", " ")
+    for sp in _SPACES:
+        t = t.replace(sp, " ")
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def parse_avtoelon_cards(html: str) -> Dict[str, dict]:
+    """
+    Карточки выдачи avtoelon.uz по блокам: id → {title, price_text, year, mileage_km}.
+    Блок — от <div data-id=… class="… list-item a-elem"> до следующей карточки. Год и пробег — из строки описания
+    («2022 г., 1.5 л, Бензин, 64 000 км»); подписи картинок (alt) не читаются.
+    """
+    out: Dict[str, dict] = {}
+    html = html or ""
+    marks = list(_AE_BLOCK.finditer(html))
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(html)
+        blk = html[m.start():end]
+        nxt = blk.find("listing.items.push")
+        if nxt > 0:
+            blk = blk[:nxt]
+        title = re.search(r'js__advert-link"[^>]*>([^<]*)</a>', blk)
+        k = blk.find('class="price"')
+        body = _plain_text(re.sub(r"<img[^>]*>", " ", blk[k:] if k >= 0 else blk))
+        price = _AE_PRICE.search(body)
+        y = _AE_YEAR.search(body)
+        km = _AE_KM.search(body)
+        try:
+            km_v = float(km.group(1).replace(" ", "")) if km else None
+        except ValueError:
+            km_v = None
+        out[m.group(1)] = {"title": re.sub(r"\s+", " ", title.group(1)).strip() if title else "",
+                           "price_text": price.group(1) if price else "",
+                           "year": int(y.group(1)) if y else None, "mileage_km": km_v}
+    return out
+
+
+ANALOG_QUERY_KEYS = ("page", "year[from]")      # ТЗ 13.10.2026 п. 5.1: только эти параметры (их разрешает robots.txt)
+AVTOELON_CARS = "https://avtoelon.uz/avto"
+
+
+def analog_url(brand: str, model: str, year: Optional[int], page: int, base: str = AVTOELON_CARS) -> str:
+    """Адрес выдачи: <раздел>/<марка>/<модель>/?year[from]=<год>[&page=N]. Других параметров не бывает."""
+    parts = [base.rstrip("/"), _slug(brand)]
+    if model:
+        parts.append(_slug(model))
+    url = "/".join(p for p in parts if p) + "/"
+    q = []
+    if year:
+        q.append("year[from]=%d" % int(year))
+    if page > 1:
+        q.append("page=%d" % int(page))
+    return url + ("?" + "&".join(q) if q else "")
+
+
+def query_ok(url: str) -> bool:
+    """В адресе только разрешённые ТЗ параметры (?page=, ?year[from]=)."""
+    qs = urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query, keep_blank_values=True)
+    return all(k in ANALOG_QUERY_KEYS for k, _ in qs)
+
+
+def fetch_avtoelon_analogs(brand: str, model: str, year: Optional[int], as_of: date, rate: Optional[float],
+                           max_pages: int = 15, target: int = 20, year_tolerance: int = 0,
+                           base: str = AVTOELON_CARS, pages: Optional[List[str]] = None,
+                           keep_html: bool = False) -> dict:
+    """
+    Аналоги для оценки ТС: выдача avtoelon.uz по марке и модели с ?year[from]=<год>, дальше &page=N, пока не
+    наберётся target аналогов нужного года (± year_tolerance) или не кончатся страницы (max_pages).
+    Каждый адрес проверяется по списку параметров и по robots.txt (urllib.robotparser и RFC 9309); пауза между
+    обращениями — MIN_DELAY_SEC, User-Agent — честный. pages — сохранённые страницы (проверка без сети): тогда в сеть
+    не ходим вовсе. Окно свежести — WINDOW_MONTHS по lastUpdate (как у остальных адаптеров).
+    Возвращает {source, status, reason, urls, pages_read, analogs: [{title, price, currency, price_uzs, year,
+    mileage_km, published, url}], dropped, limitations, fetched_at, offline, html?}.
+    """
+    out = {"source": "avtoelon.uz", "status": STATUS_DOWN, "reason": "", "urls": [], "pages_read": 0,
+           "analogs": [], "dropped": {"other_year": 0, "no_year": 0, "stale_or_undated": 0, "no_price": 0,
+                                      "duplicate": 0},
+           "limitations": [], "fetched_at": _now(), "offline": pages is not None, "rate": rate}
+    if not _slug(brand) or not _slug(model):
+        out["reason"] = "нужны марка и модель латиницей — запрос к выдаче построить нельзя"
+        return out
+    want = int(year) if year else None
+    seen, html_all = set(), []
+    n_pages = len(pages) if pages is not None else max(1, int(max_pages))
+    for page in range(1, n_pages + 1):
+        url = analog_url(brand, model, want, page, base)
+        out["urls"].append(url)
+        if pages is not None:
+            html = pages[page - 1]
+        else:
+            if not query_ok(url):
+                out.update(status=STATUS_ROBOTS, reason="параметр адреса вне разрешённых (?page=, ?year[from]=): "
+                                                        + url)
+                return out
+            allowed, why = robots_check(url)
+            if not allowed:
+                out.update(status=STATUS_ROBOTS, reason=why)
+                return out
+            try:
+                html = _http_get(url)
+            except urllib.error.HTTPError as e:
+                out["reason"] = "сайт ответил HTTP %d на %s" % (e.code, url)
+                break
+            except Exception as e:
+                out["reason"] = "не удалось загрузить выдачу (%s)" % type(e).__name__
+                break
+        out["pages_read"] += 1
+        if keep_html:
+            html_all.append(html)
+        res = SourceResult(source="avtoelon.uz", status=STATUS_DOWN)
+        rows = _parse_avtoelon(html, as_of, rate, {}, res)
+        total_cards = len(_AE_ITEM.findall(html))
+        out["dropped"]["stale_or_undated"] += max(0, total_cards - len(rows))
+        for smp in rows:
+            if smp.url in seen:
+                out["dropped"]["duplicate"] += 1
+                continue
+            seen.add(smp.url)
+            y = getattr(smp, "year", None)
+            if want and y is None:
+                out["dropped"]["no_year"] += 1
+                continue
+            if want and abs(int(y) - want) > int(year_tolerance):
+                out["dropped"]["other_year"] += 1
+                continue
+            if smp.price is None:
+                out["dropped"]["no_price"] += 1
+                continue
+            out["analogs"].append({"title": smp.title, "price": smp.price, "currency": smp.currency,
+                                   "price_uzs": smp.price_uzs, "year": y,
+                                   "mileage_km": getattr(smp, "mileage_km", None),
+                                   "published": smp.published, "url": smp.url})
+        if len(out["analogs"]) >= int(target) or total_cards == 0 or ("page=%d" % (page + 1)) not in html:
+            break
+    if keep_html:
+        out["html"] = html_all
+    out["status"] = STATUS_OK if out["analogs"] else (STATUS_EMPTY if out["pages_read"] else STATUS_DOWN)
+    if not out["analogs"] and out["pages_read"] and not out["reason"]:
+        out["reason"] = "аналогов %s %s %s года за %d мес. не найдено" % (brand, model, want or "", WINDOW_MONTHS)
+    out["limitations"] = [
+        "Дата у объявления — дата последнего обновления (lastUpdate); дату первой публикации выдача не отдаёт.",
+        "Пробег аналога взят из строки описания карточки и показан справочно; поправка по пробегу — по пробегу "
+        "оцениваемого объекта.",
+        "?year[from]= отбирает машины этого года и новее; точный год аналога отбирается по карточке.",
+        "Цена объявления — цена предложения, а не сделки: в оценке применяется скидка на торг.",
+    ]
+    return out
 
 
 # --------------------------------------------------------------------------- #

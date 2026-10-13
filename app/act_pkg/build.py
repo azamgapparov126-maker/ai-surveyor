@@ -13,6 +13,7 @@ from .. import class_templates as ctpl
 from .. import act_market as am
 from .. import act_texts as tx
 from .. import db, valuation
+from .. import contract_check as cck
 from .. import product_parts as pp
 from ..risk_analytics import load_thresholds
 
@@ -57,13 +58,18 @@ def build_data(con, clean: dict, owner: str, lang: str) -> dict:
     _rate_in(con, B)
     _value_in(con, B)
     _modules_in(con, B)
+    _valuation_in(con, B)
     _missing_in(B)
     _decision_in(con, B)
     _assemble(con, B)
+    # оценка стоимости V и S/V (ТЗ 13.10.2026, дни 5–6): единая структура act_json.valuation
+    B.D["valuation"], B.D["value_sv"] = B.valuation, B.value_sv
     _finish_single(con, B)
     _finish_parts(con, B)
     _finish_borrower(B)
     _finish_objects(con, B)
+    # сверка договора — 12 проверок (ТЗ 13.10.2026, день 7.2): дополняет прежнюю сверку contract_check
+    cck.attach(con, B.D, B.ct, B.upload, B.st, _today())
     return B.D
 
 
@@ -343,6 +349,17 @@ def _modules_in(con, B) -> None:
     B.analytics, B.block_errors, B.ctx, B.exchange, B.fr, B.meas = analytics, block_errors, ctx, exchange, fr, meas
     B.obj_doc, B.premium_final, B.rate_final, B.region_ra, B.scen = obj_doc, premium_final, rate_final, region_ra, scen
     B.tpl_risks = tpl_risks
+
+
+def _valuation_in(con, B) -> None:
+    """Оценка V (сохранённая оценка ТС, биржа, затратный метод, износ) и S/V по ГК ст. 936/938; в сеть не ходит."""
+    text = " ".join(str(x) for x in ((B.obj_doc or {}).get("original"), (B.obj_doc or {}).get("translated")) if x)
+    try:
+        B.valuation, B.value_sv = valuation.for_act(con, cls=B.cls, group=B.group, kind=B.kind, m=B.m, o=B.o,
+                                                    facts=B.facts, text=text, settings=B.st, today=_today())
+    except Exception as e:               # оценка не посчитана — акт всё равно формируется
+        B.block_errors.append({"block": "valuation", "error": type(e).__name__})
+        B.valuation, B.value_sv = {"available": False, "reason": "error", "error": type(e).__name__}, None
 
 
 def _missing_in(B) -> None:

@@ -149,3 +149,55 @@ def post_refresh(page: Optional[str] = None):
         raise HTTPException(404, "страница «%s» не зарегистрирована" % page)
     res = refresh([page] if page else None)
     return {"обновлено страниц": len(res), "когда": _state["last"], "страницы": res}
+
+
+# --------------------------------------------------------------------------- #
+# VWAP — средневзвешенная по объёму цена сделок (ТЗ 13.10.2026, п. 6.1: оценка грузов и запасов кл. 7 и 9)
+# --------------------------------------------------------------------------- #
+
+def unit_norm(unit: str) -> tuple:
+    """Единица ввода → (приведённая единица биржи, во сколько раз умножить количество). «кг» → («т», 0,001)."""
+    u = str(unit or "").strip().lower().rstrip(".")
+    to, k = us.UNITS.get(u, (u, 1.0))
+    return to, 1.0 / k
+
+
+def vwap(con, group: str, unit: str, days: int = 30, as_of: Optional[str] = None) -> dict:
+    """
+    VWAP = Σ(p·q) / Σq по сделкам реестра (exchange_quotes, только с датой сделки и в сумах) группы group за days
+    дней до as_of; p — цена за приведённую единицу, q — количество сделки в той же единице. Сделка учитывается один
+    раз (последняя загрузка). Квартили цены — без весов, для надёжности. Нет таблицы или сделок — deals = 0.
+    """
+    from datetime import date as _d, timedelta as _td
+    end = as_of or _d.today().isoformat()
+    start = (_d.fromisoformat(end) - _td(days=int(days))).isoformat()
+    to, qty_factor = unit_norm(unit)
+    out = {"group": group, "unit": to, "qty_factor": qty_factor, "deals": 0, "vwap": None, "q1": None, "q3": None,
+           "volume": 0.0, "from": start, "to": end, "days": int(days),
+           "url": us.BASE + us.PAGES["List"]["path"]}
+    try:
+        rows = db.rows(con, "SELECT unit, unit_norm, lot_qty, price_unit_norm, trade_date, page FROM (%s) "
+                            "WHERE grp=? AND unit_norm=? AND trade_date > ? AND trade_date <= ? "
+                            "AND price_unit_norm > 0 AND lot_qty > 0 AND currency='UZS'" % us._DEALS_SQL,
+                       group, to, start, end)
+    except Exception:
+        return out
+    pq, q, prices = 0.0, 0.0, []
+    for r in rows:
+        k = us.UNITS.get(str(r["unit"] or "").strip().lower(), (r["unit_norm"], 1.0))[1]
+        qn = float(r["lot_qty"]) / k
+        pq += float(r["price_unit_norm"]) * qn
+        q += qn
+        prices.append(float(r["price_unit_norm"]))
+    if not prices or q <= 0:
+        return out
+    xs = sorted(prices)
+
+    def qt(p):
+        pos = p * (len(xs) - 1)
+        lo = int(pos)
+        hi = min(lo + 1, len(xs) - 1)
+        return xs[lo] + (xs[hi] - xs[lo]) * (pos - lo)
+    out.update(deals=len(prices), vwap=pq / q, q1=qt(0.25), q3=qt(0.75), volume=round(q, 6),
+               first_date=min(r["trade_date"] for r in rows), last_date=max(r["trade_date"] for r in rows))
+    return out

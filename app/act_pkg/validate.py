@@ -257,7 +257,53 @@ def _object_opts_in(clean: dict, errs: dict, opt: dict) -> dict:
             errs["declared_value_original"] = "нужно число больше нуля"
         else:
             o["declared_value_original"] = v
+    _valuation_opts_in(errs, o, opt)
     return o
+
+
+VAL_UNITS = ("т", "тонна", "кг", "килограмм", "л", "литр", "м³", "м3", "м²", "шт")
+VAL_MATERIALS = ("reinforced_concrete", "brick", "sandwich", "adobe", "metal")
+
+
+def _valuation_opts_in(errs: dict, o: dict, opt: dict) -> None:
+    """
+    Поля оценки стоимости (ТЗ 13.10.2026, дни 5–6): valuation_id — сохранённая оценка ТС (POST /valuation/vehicle);
+    quantity и unit — количество товара для биржевой цены (кл. 7 и 9); material и building_type — затратный метод.
+    """
+    vid = opt.get("valuation_id")
+    if vid not in (None, ""):
+        try:
+            o["valuation_id"] = _int_in(vid, 1, 10 ** 12)
+        except ValueError:
+            errs["valuation_id"] = "номер сохранённой оценки — целое больше нуля"
+    qty = opt.get("quantity")
+    if qty not in (None, ""):
+        q = _money_in(qty)
+        if q is None or q <= 0 or q > 1e12:
+            errs["quantity"] = "количество — число больше нуля"
+        else:
+            o["quantity"] = q
+    unit = opt.get("unit")
+    if unit not in (None, ""):
+        u = str(unit).strip().lower().rstrip(".")
+        if u not in VAL_UNITS:
+            errs["unit"] = "одно из: " + ", ".join(VAL_UNITS)
+        else:
+            o["unit"] = u
+    if o.get("quantity") is not None and not o.get("unit") and "unit" not in errs:
+        errs["unit"] = "к количеству нужна единица: " + ", ".join(VAL_UNITS)
+    mat = opt.get("material")
+    if mat not in (None, ""):
+        if mat not in VAL_MATERIALS:
+            errs["material"] = "одно из: " + ", ".join(VAL_MATERIALS)
+        else:
+            o["material"] = mat
+    bt = _s(opt.get("building_type"), 60)
+    if bt:
+        if llm.has_pd(bt):
+            errs["building_type"] = "вид здания — без персональных данных"
+        else:
+            o["building_type"] = bt
 
 
 def _class_opts_in(con, ccode: str, errs: dict, m: dict, o: dict, opt: dict) -> Optional[dict]:
