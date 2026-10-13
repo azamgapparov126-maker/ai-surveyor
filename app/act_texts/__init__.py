@@ -136,7 +136,7 @@ def count_text(n, word: str, lang: str = "ru", digits: int = 0) -> str:
 # --------------------------------------------------------------------------- #
 #  Тексты по темам: подписи — именами модулей, TX — склейкой блоков ниже
 # --------------------------------------------------------------------------- #
-from . import below_min, compact, docs, factors, fork, market, misc, rate, scenarios, sections, stats  # noqa: E402
+from . import below_min, compact, docs, factors, fork, market, misc, rate, rate_model, scenarios, sections, stats  # noqa: E402,E501
 from .docs import _ct_from_rq  # noqa: E402,F401
 from .sections import (  # noqa: E402,F401
     FIELD_LABELS,
@@ -226,6 +226,8 @@ for _block in (docs.TX_CONTRACT,
                misc.TX_OBJECTS,
                misc.TX_OBJECTS_SRC,
                misc.TX_PREFILL,
-               compact.TX_COMPACT):
+               compact.TX_COMPACT,
+               rate_model.TX_RATE_MODEL):
     TX.update(_block)
 del _block
+from .rate_model import factor_label as rm_factor_label, rate_explain  # noqa: E402,F401

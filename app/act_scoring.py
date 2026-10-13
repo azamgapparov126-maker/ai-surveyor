@@ -122,7 +122,7 @@ def _subject(D: dict, out: dict, lang: str) -> dict:
     else:
         holder, holder_kind = t("sc_holder_unknown", lang), None
     region = A.region_label(must, lang)
-    address = (D.get("object_facts") or {}).get("address")
+    address = (D.get("object") or D.get("object_facts") or {}).get("address")      # object — акты с 13.10.2026
     ids = []
     cad = (A.preferred(rec, "cadastre_no") or {}).get("value") or (D.get("contract") or {}).get("cadastre_no") \
         or (D.get("request") or {}).get("cadastre_no")

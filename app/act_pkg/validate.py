@@ -3,7 +3,6 @@
 части комплексного продукта, парк объектов.
 """
 import re
-from datetime import date
 from typing import Any, Optional
 
 from .. import act_engine as ae
@@ -12,11 +11,13 @@ from .. import class_templates as ctpl
 from .. import act_market as am
 from .. import act_texts as tx
 from .. import db, llm
+from .. import product_parts as pp
 
-from .common import CONDITIONS, load_settings, MAX_FILES, MAX_RECOGNIZED, MAX_REGION_TEXT, MAX_SUM, REGION_OTHER
+from .common import CONDITIONS, load_settings, MAX_FILES, MAX_RECOGNIZED, MAX_REGION_TEXT, MAX_SUM, REGION_OTHER, _today
 from .recognize import pd_like, _s, value_limit
 from .regions import region_code
 from .documents import validate_credit_report
+from .facts import address_in
 from .terms import _bool_in, _int_in, _money_in, validate_contract, validate_request
 
 
@@ -36,7 +37,12 @@ def validate(con, body: dict) -> tuple:
     ccode = _product_in(con, errs, m, must)
     _sums_region_in(errs, m, must)
     o = _object_opts_in(clean, errs, opt)
+    # адрес объекта (13.10.2026): отдельное поле, только адрес — без имён людей, телефонов и ИНН
+    o["address"], a_err = address_in(opt.get("address"), int(st["object_facts"]["address_max_chars"]))
+    if a_err:
+        errs["address"] = a_err
     tpl = _class_opts_in(con, ccode, errs, m, o, opt)
+    _client_type_in(errs, m, o, must, st)
     _docs_opts_in(clean, errs, opt, st)
     _recognized_opts_in(body, clean, errs)
     # комплексный продукт по частям (30.09.2026): части сотрудника и переключатель «один объект / разные объекты»
@@ -64,7 +70,57 @@ def validate(con, body: dict) -> tuple:
         errs.pop("deductible", None)
         if ded_err:
             errs["deductible"] = ded_err
+    _yur_only_fields_in(clean, errs, st, opt)
     return clean, errs
+
+
+CLIENT_TYPES = ("fiz", "yur")
+PAYER_CLIENT = {"физ": "fiz", "юр": "yur"}
+
+
+def _client_type_in(errs: dict, m: dict, o: dict, must: dict, st: dict) -> None:
+    """
+    Тип клиента must.client_type (ТЗ 13.10.2026, день 2.3): fiz | yur. Не указан — из optional.payer_type, затем по
+    названию продукта (настройка client_type.words: «физлиц» → fiz, «юрлиц» → yur), иначе client_type.default (yur).
+    Указаны оба и расходятся — ошибка: строка тарифа неясна.
+    """
+    raw = must.get("client_type")
+    payer_ct = PAYER_CLIENT.get(o.get("payer_type"))
+    if raw not in (None, ""):
+        ct = str(raw).strip().lower()
+        if ct not in CLIENT_TYPES:
+            errs["client_type"] = "fiz (физлицо) или yur (юрлицо)"
+            return
+        if payer_ct and payer_ct != ct:
+            errs["client_type"] = "расходится с payer_type: укажите одно и то же (fiz = физ, yur = юр)"
+            return
+        m["client_type"], m["client_type_source"] = ct, "input"
+    elif payer_ct:
+        m["client_type"], m["client_type_source"] = payer_ct, "payer_type"
+    else:
+        m["client_type"], m["client_type_source"] = pp.default_client_type(m.get("product"), st)
+
+
+def _yur_only_fields_in(clean: dict, errs: dict, st: dict, opt: dict) -> None:
+    """ФОТ, оборот и другие поля «только у юрлица» (client_type.yur_only_fields) у физлица не принимаются — ни у
+    договора, ни у частей, ни у объектов. Смотрится и сырой ввод: поле чужого класса проверка класса отбрасывает
+    молча, а сотрудник должен узнать, что ФОТ физлицу не указывают."""
+    if clean["must"].get("client_type") != "fiz":
+        return
+    banned = set(ae.client_type_rules(st).get("yur_only_fields") or [])
+
+    def keys(d):
+        return set(d) & banned if isinstance(d, dict) else set()
+    found = keys(opt.get("class_fields")) | keys(clean["optional"].get("class_fields"))
+    for p in (opt.get("parts") if isinstance(opt.get("parts"), list) else []):
+        if isinstance(p, dict):
+            found |= keys((p.get("fields") or {}).get("class_fields") if isinstance(p.get("fields"), dict) else None)
+    for ob in (opt.get("objects") if isinstance(opt.get("objects"), list) else []):
+        if isinstance(ob, dict):
+            found |= keys(ob.get("class_fields"))
+    if found:
+        errs["class_fields"] = ("только для юрлица (фонд оплаты труда, оборот, работники): " + ", ".join(sorted(found))
+                                + " — у физлица уберите эти поля или укажите client_type = yur")
 
 
 def _product_in(con, errs: dict, m: dict, must: dict) -> str:
@@ -138,7 +194,7 @@ def _sums_region_in(errs: dict, m: dict, must: dict) -> None:
 def _object_opts_in(clean: dict, errs: dict, opt: dict) -> dict:
     """Необязательные поля объекта: годы, срок, место, признаки, убытки, цены, ставка."""
     o = clean["optional"]
-    this_year = date.today().year
+    this_year = _today().year
     for key, lo, hi in (("year", 1950, this_year + 1), ("purchase_year", 1950, this_year),
                         ("term_days", 1, 3660)):
         try:
@@ -378,7 +434,7 @@ def validate_part_fields(raw: Any, cls: str, tpl: Optional[dict]) -> tuple:
     if not isinstance(raw, dict):
         return {}, "fields — объект {признак: значение}"
     out = {}
-    this_year = date.today().year
+    this_year = _today().year
     try:
         for key, lo, hi in (("year", 1950, this_year + 1), ("purchase_year", 1950, this_year)):
             v = _int_in(raw.get(key), lo, hi)
@@ -598,7 +654,7 @@ def validate_objects(raw: Any, tpl: Optional[dict]) -> tuple:
     """
     if not isinstance(raw, list) or not raw or len(raw) > MAX_OBJECTS:
         return None, f"objects — список от 1 до {MAX_OBJECTS} объектов {{label, sum_insured, object_value, …}}"
-    this_year = date.today().year
+    this_year = _today().year
     out = []
     for i, ob in enumerate(raw, 1):
         if not isinstance(ob, dict):

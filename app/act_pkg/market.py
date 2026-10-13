@@ -18,7 +18,7 @@ from .. import act_texts as tx
 from .. import db, guest, llm, valuation
 from ..act_texts import t
 
-from .common import cleanup, ensure_tables, _fail, FMT_MIME, _iso, MAX_BYTES, _now, PHOTO_TTL_SEC, _reply, _user, _who
+from .common import cleanup, ensure_tables, _fail, FMT_MIME, _iso, MAX_BYTES, _now, PHOTO_TTL_SEC, _reply, _today, _user, _who
 from .files import check_content, _format_of
 from .recognize import ask_model, preferred
 from .terms import _int_in
@@ -75,9 +75,9 @@ def _market_query(request: Request, session: str, brand: str, model: str, year, 
                 q[key] = v
     if year not in (None, ""):
         try:
-            q["year"] = _int_in(year, 1950, date.today().year + 1)
+            q["year"] = _int_in(year, 1950, _today().year + 1)
         except ValueError:
-            errs["year"] = f"целое число от 1950 до {date.today().year + 1}"
+            errs["year"] = f"целое число от 1950 до {_today().year + 1}"
     if object_kind:
         if object_kind not in tx.OBJECT_KINDS:
             errs["object_kind"] = "неизвестный вид объекта"
@@ -138,7 +138,7 @@ def fx_verify(claim: Optional[dict]) -> Optional[dict]:
     """
     if not claim or claim.get("by") != "cbu":
         return None
-    key = claim.get("as_of") or date.today().isoformat()
+    key = claim.get("as_of") or _today().isoformat()
     hit = _fx_cached(key)
     if hit and hit.get("by") == "cbu" and hit.get("rate") and abs(float(hit["rate"]) - float(claim["rate"])) < 0.005:
         return {"rate": float(hit["rate"]), "by": "cbu", "as_of": hit.get("as_of") or key}
@@ -172,7 +172,7 @@ def _shots(request, user, owner, lang, files, site, q, emp_rate, st, sid, folder
         shutil.rmtree(folder, ignore_errors=True)
         return _fail(request, t("ph_none", lang), 422, rejected=rejected, ai=False, warning=t("mk_warn", lang))
 
-    today = date.today()
+    today = _today()
     # курс ищем параллельно с чтением снимков в своём пуле: к cbu.uz ходит существующий модуль оценки,
     # не к площадкам; общий срок ожидания — FX_DEADLINE_SEC от начала загрузки
     fx_fut = _fx_submit(today)

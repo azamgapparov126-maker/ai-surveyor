@@ -699,7 +699,10 @@ def main():
         saved_reviews = []
     # product_rate_versions (импорт продуктов, app/product_import.py) ссылается на tariff_versions и на
     # продукты справочника — пересобирается вместе с ними, иначе остались бы висячие ссылки
-    for t in ["min_rates", "product_rate_versions", "product_classes", "products", "preventive_measures", "perils",
+    # части продуктов (app/product_parts.py) ссылаются на версии тарифа и продукты — пересобираются вместе с ними
+    # (строки политики заново — product_parts.migrate_from_policy ниже)
+    for t in ["product_parts", "product_part_versions",
+              "min_rates", "product_rate_versions", "product_classes", "products", "preventive_measures", "perils",
               "coefficients", "base_rates", "load_components", "checklists", "rules", "classes", "groups",
               "tariff_versions"]:
         cur.execute(f"DELETE FROM {t}")
@@ -834,6 +837,25 @@ def main():
     except Exception as e:
         print("  реестр отслеживаемых актов не залит:", e)
 
+    # части продуктов из тарифной политики (ТЗ 13.10.2026, день 2.1) и актуарный отчёт 2022 (день 2.3)
+    try:
+        from app import product_parts as _pp       # noqa: E402  (путь уже добавлен выше)
+        con.row_factory = sqlite3.Row
+        res = _pp.migrate_from_policy(con, "db_build.py")
+        print(f"  частей продуктов: {res['parts']} ({res['rows']} строк), спорных разборов: {len(res['disputed'])}")
+    except Exception as e:
+        print("  части продуктов не заведены:", e)
+    try:
+        from app import actuarial as _act          # noqa: E402
+        con.row_factory = sqlite3.Row
+        if not con.execute("SELECT 1 FROM actuarial_reports WHERE year=2022 LIMIT 1").fetchone():
+            out = _act.load_2022(con, "db_build.py")
+            print(f"  актуарный отчёт 2022: субпортфелей {out['added']}")
+    except Exception as e:
+        print("  актуарный отчёт не загружен:", e)
+    con.row_factory = None
+    cur = con.cursor()
+
     cur.execute("INSERT INTO audit (ts,who,action,entity,detail) VALUES (?,?,?,?,?)",
                 (datetime.now().isoformat(timespec="seconds"), "system",
                  "создана" if fresh else "обновлена", "справочники", "db_build.py"))
@@ -844,7 +866,7 @@ def main():
     for t in ["groups", "classes", "perils", "products", "product_classes", "min_rates",
               "coefficients", "base_rates", "load_components", "checklists", "rules", "preventive_measures",
               "depreciation_norms", "valuation_settings", "general_agreements", "request_reviewers", "watched_acts",
-              "tariff_versions", "osgor_activities", "class_templates"]:
+              "tariff_versions", "osgor_activities", "class_templates", "product_parts", "actuarial_reports"]:
         n = cur.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         print(f"  {t:18} {n}")
     con.close()

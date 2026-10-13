@@ -635,10 +635,18 @@ def _load_reference(con, today: str) -> Reference:
             lst.append(r["factor_code"])
     prods = {r["code"]: {"name": r["name"], "pricing_mode": r["pricing_mode"]}
              for r in rows(con, "SELECT code, name, pricing_mode FROM products")}
+    # модель ставки ТЗ 13.10.2026: r_рын НАПП и опыт INSON по классам, настройки rate_model и load (act_settings)
+    from . import rate_model
+    try:
+        rate_inputs = rate_model.reference_inputs(con)
+    except Exception as e:                  # рынок и опыт не прочитаны — модель берёт запасной вариант (тариф)
+        print("модель ставки: данные рынка не прочитаны:", type(e).__name__)
+        rate_inputs = {}
     return Reference(base_rates=base, coefficients=coef, perils=perils, load_share=load,
                      min_rates=min_rates, product_classes=pcs, checklists=checklists,
                      financials=fin[0] if fin else None, measures=measures, market=market_rates(con),
-                     class_factors=cls_factors, products=prods)
+                     class_factors=cls_factors, products=prods, rate_inputs=rate_inputs,
+                     rate_settings=rate_model.db_settings(con))
 
 
 # какая строка отчёта НАПП представляет класс: для 8 и 9 пакет «8,9» показательнее одиночных строк

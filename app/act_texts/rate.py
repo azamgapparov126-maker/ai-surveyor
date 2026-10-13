@@ -3,6 +3,13 @@
 
 # ---------- комплексный продукт по частям (30.09.2026, ТЗ универсального шаблона 4.1в) ----------
 TX_PARTS = {
+    # часть продукта из справочника частей (ТЗ 13.10.2026, день 2.1): правка администратора или импорт из Excel
+    "how_part_src": {"ru": "Ставка части {n} продукта {code} (класс {cls}) — из справочника частей, версия с {date}: "
+                           "базовая {base}, минимальная {min}",
+                     "uz": "{code} mahsulotining {n}-qismi ({cls}-klass) tarifi — qismlar maʼlumotnomasidan, {date} "
+                           "dagi versiya: asosiy {base}, eng kam {min}",
+                     "en": "Rate of part {n} of product {code} (class {cls}) — from the product parts reference, "
+                           "version from {date}: base {base}, minimum {min}"},
     "how_part_min_text": {"ru": "Ставка класса {cls} по тарифной политике продукта {code} — {rate} (из текста тарифа: "
                                 "часть договора)",
                           "uz": "{code} mahsuloti tarif siyosati boʻyicha {cls}-klass tarifi — {rate} (tarif matnidan: "

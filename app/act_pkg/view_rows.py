@@ -50,6 +50,10 @@ def _fmt_param(key: str, v, lang: str):
         return _spct(v, lang, 2)
     if key == "fmult":                      # множитель факторов объекта: 1,6905
         return _mult(v, lang)
+    if key in ("net", "gross", "cap", "rate6"):     # ставки модели ставки (ТЗ 13.10.2026) — до 6 знаков
+        return pct(v, lang, 6)
+    if key in ("z", "theta", "c", "L", "k_obj", "k_reg", "k_cl"):   # доли и множители модели ставки
+        return _mult(v, lang)
     return v
 
 
@@ -130,6 +134,8 @@ def _check_text(c: dict, lang: str, group: Optional[str] = None, veh_group: Opti
     if c["code"].startswith("c_obj_"):
         return t(c["code"], lang, n=p.get("n"), label=p.get("label") or "", req=pct(p.get("req"), lang),
                  min=pct(p.get("min"), lang))
+    if c["code"].startswith("c_rm_refer_"):              # модель ставки: «На рассмотрение» с числами
+        return _text(c, lang)
     return t(c["code"], lang)
 
 
@@ -227,8 +233,16 @@ def _object_rows(D: dict, lang: str) -> list:
     keys = list(keys) + [k for k in EXTRA_IF_PRESENT.get(group, []) if preferred(rec, k)]
     key_first = ae.KEY_FIELDS.get(group, [])
     rows, missing = [], []
+    # факты об объекте (13.10.2026): у новых актов — словарь D["object"], у старых его нет и строки прежние
+    facts = D.get("object")
     for key in keys:
         label = _s1_label(key, lang, group)
+        if facts is not None:
+            fact_row = _fact_row(key, label, facts, lang, preferred(rec, key))
+            if fact_row is not False:
+                if fact_row is not None:
+                    rows.append(fact_row)
+                continue
         if key == "location" and opt.get("location"):
             rows.append(_row(label, tx.label(tx.LOCATION_LABELS, opt["location"], lang),
                              tx.label(tx.SOURCE_LABELS, "input", lang)))
@@ -272,6 +286,8 @@ def _object_rows(D: dict, lang: str) -> list:
             note += "; " + t("also_in", lang, what="; ".join(
                 f"{r['value']} ({tx.label(tx.SOURCE_LABELS, r['source'], lang)})" for r in others[:3]))
         rows.append(_row(label, best["value"], note))
+    if facts is not None:
+        rows += _fact_extra_rows(facts, lang)
     if group not in ROWS_BY_GROUP:
         for key in ae.EXTRA_ROW_KEYS:
             best = preferred(rec, key)
@@ -295,6 +311,55 @@ def _object_rows(D: dict, lang: str) -> list:
             rest.append(label.lower() if lang != "en" else label[:1].lower() + label[1:])
     if rest:
         out.append(_row(t("s1_not_specified", lang), ", ".join(rest)))
+    return out
+
+
+def _src_note(src: Optional[str], lang: str) -> str:
+    """Источник значения: ввод сотрудника — без пометки «проверьте», документ и фото — с ней."""
+    if src in (None, "input"):
+        return tx.label(tx.SOURCE_LABELS, "input", lang)
+    return tx.label(tx.SOURCE_LABELS, src, lang) + ", " + t("check_mark", lang)
+
+
+def _fact_row(key: str, label: str, facts: dict, lang: str, best: Optional[dict]):
+    """
+    Строка раздела 1 из фактов об объекте: row — показать её; None — строки нет (тип места — в разделе риска);
+    False — фактов по этому полю нет, строка собирается как раньше (распознанное или «данные недоступны»).
+    """
+    src = facts.get("sources") or {}
+    if key == "location":
+        if facts.get("address"):
+            return _row(t("lbl_object_address", lang), facts["address"], _src_note(src.get("address"), lang))
+        # адреса нет: тип места (стройплощадка, стоянка) — только в разделе риска, здесь строки нет
+        return None if facts.get("location") else False
+    if key == "total_area" and not best and facts.get("area_m2") is not None:
+        return _row(label, tx._num(float(facts["area_m2"]), tx.lang_of(lang), 0 if float(facts["area_m2"]).is_integer()
+                                    else 1) + tx.NBSP + t("unit_m2", lang), _src_note(src.get("area_m2"), lang))
+    if key == "floors" and not best and facts.get("floors") is not None:
+        return _row(label, str(facts["floors"]), _src_note(src.get("floors"), lang))
+    return False
+
+
+def _fact_extra_rows(facts: dict, lang: str) -> list:
+    """Строки фактов, которых нет в наборе раздела 1 вида объекта: износ, водители."""
+    src = facts.get("sources") or {}
+    out = []
+    lvl = facts.get("wear_level")
+    if facts.get("wear_pct") is not None or facts.get("wear_text") or lvl:
+        parts = []
+        if facts.get("wear_pct") is not None:
+            parts.append(tx.pct(facts["wear_pct"], lang))
+        elif facts.get("wear_text"):
+            parts.append(facts["wear_text"])
+        if lvl in ("new", "normal", "high", "emergency"):
+            lv = t("s1_wear_" + lvl, lang)
+            parts.append(f"({lv})" if parts else lv)
+        note = _src_note(src.get("wear_text") or src.get("wear_level"), lang)
+        if src.get("wear_level") == "wear_pct":
+            note += "; " + t("s1_wear_by_pct", lang)
+        out.append(_row(t("lbl_wear", lang), " ".join(parts), note))
+    if facts.get("drivers"):
+        out.append(_row(t("lbl_drivers", lang), facts["drivers"], _src_note(src.get("drivers"), lang)))
     return out
 
 

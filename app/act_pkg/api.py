@@ -277,6 +277,8 @@ def act_settings_put(request: Request, body: dict = Body(...)):
                                                  0, str(body.get("note") or "")[:300]))
         db.audit(con, user.get("login") or "админ", "акт: настройки изменены", f"act_settings:{cur.lastrowid}",
                  {"keys": sorted(patch)})
+        # модель ставки (rate_model, load) читается и справочником движка — его кэш сбрасывается
+        db.reference_changed(con)
         return {"ok": True, "id": cur.lastrowid, "settings": load_settings(con)}
 
 
@@ -331,7 +333,8 @@ def act_templates_get(request: Request, class_code: str, lang: str = "", raw: in
             return JSONResponse({"ok": False, "detail": "нет шаблона для класса " + class_code}, status_code=404)
         out = ctpl.view(row, lg, con)
         if raw:
-            out["raw"] = row["template"]
+            # единый справочник факторов (factor_catalog) собирается при чтении — в правку шаблона не входит
+            out["raw"] = {k: v for k, v in row["template"].items() if k != ctpl.CATALOG_KEY}
         return {"ok": True, **out}
 
 

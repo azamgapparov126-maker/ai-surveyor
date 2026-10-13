@@ -52,8 +52,9 @@ os.environ["SURVEYOR_NO_BACKGROUND"] = "1"
 
 import pymupdf                            # noqa: E402
 
-from tmpdb import temp_db                 # noqa: E402
+from tmpdb import ensure_market_stats, ensure_stat_series, temp_db   # noqa: E402
 from app import act, act_engine as ae, db, guest, llm   # noqa: E402
+from app import rate_model as rm   # noqa: E402
 from app import act_market as am, act_texts as tx       # noqa: E402
 from app.engine import Input, min_rate, premium_of, rate_for   # noqa: E402
 from app.main import app                  # noqa: E402
@@ -1235,7 +1236,8 @@ def check_misc():
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-CONTRACT = Path(__file__).resolve().parent.parent / "sandbox" / "flow150_contract.docx"
+# учебный договор (выдуманные данные) — в репозитории, тест идёт на чистой машине без sandbox/
+CONTRACT = Path(__file__).resolve().parent / "fixtures" / "contract_warehouse.docx"
 WH_MUST = {"product_code": "0808", "sum_insured": 1_000_000_000, "object_value": 1_200_000_000,
            "region": "Ташкент"}
 WH_OPT = {"object_kind": "warehouse", "protection": "alarm", "losses_3y": {"count": 0, "small_count": 0}}
@@ -1277,7 +1279,8 @@ def ra_same(con, must, optional):
 
 
 # сценарий акта ← сценарий risk_analytics (там названия EML и PML переставлены, модуль не меняем)
-MAP_RA = {"PML": "EML", "EML": "PML", "MFL": "MFL"}
+# с 13.10.2026 (задача 4.1) названия в risk_analytics совпадают с актом; было {"PML": "EML", "EML": "PML"}
+MAP_RA = {"PML": "PML", "EML": "EML", "MFL": "MFL"}
 SCEN_REPORT = {}                          # цифры сценариев для отчёта (печатаются в конце)
 
 
@@ -1297,7 +1300,7 @@ def check_scenarios():
                            "sum_insured": CRANE_MUST["sum_insured"], "object_value": CRANE_MUST["object_value"],
                            "region": CRANE_MUST["region"], "vehicle_type": "special"},
                      {"losses_3y": {"count": 0, "amount": 0, "small_count": 0}})
-    # порядок заказчика PML ≤ EML ≤ MFL: PML акта = EML модуля («защита сработала»), EML акта = PML модуля
+    # порядок заказчика PML ≤ EML ≤ MFL — тот же в модуле (переименование 13.10.2026)
     for s in ("PML", "EML", "MFL"):
         src = MAP_RA[s]
         ok(f"автокран: {s} акта = {src} risk_analytics", sc[s.lower()]["amount"] == round(an["scenarios"][src]["amount"])
@@ -1322,8 +1325,8 @@ def check_scenarios():
     ok("что взято по умолчанию — в assumptions с пометкой (противоугонная влияет на EML)",
        any(x["code"] == "as_protection_veh_eml" and "EML" in x["text"] for x in sc["assumptions"])
        and all("по умолчанию" in x["text"] for x in sc["assumptions"]), sc["assumptions"])
-    ok("how: честно о перестановке названий в risk_analytics",
-       any("переставлены" in h and "PML акта = EML модуля" in h for h in sc["how"]), sc["how"])
+    ok("how: названия сценариев в акте и модуле совпадают (13.10.2026)",
+       any("совпадают" in h and "PML ≤ EML ≤ MFL" in h for h in sc["how"]), sc["how"])
     ok("calibrated = 0", sc["calibrated"] == 0 and sc["pml"]["calibrated"] == 0)
     rows = {r["label"]: r for r in a["sections"][3]["rows"]}
     ok("раздел 4: строки PML, EML, MFL и лимит удержания",
@@ -1356,7 +1359,7 @@ def check_scenarios():
                            "region": WH_MUST["region"], "activity": "warehouse"},
                      {"protection": "alarm", "losses_3y": {"count": 0, "small_count": 0}})
     ok("склад класса 9: правило класса 9", sc["available"] and sc["rule"] == "property9", sc)
-    ok("склад класса 9: PML/EML/MFL акта = EML/PML/MFL risk_analytics",
+    ok("склад класса 9: PML/EML/MFL акта = PML/EML/MFL risk_analytics",
        all(sc[s.lower()]["amount"] == round(an["scenarios"][MAP_RA[s]]["amount"]) for s in ("PML", "EML", "MFL")),
        ([sc[s.lower()]["amount"] for s in ("PML", "EML", "MFL")],
         [an["scenarios"][s]["amount"] for s in ("PML", "EML", "MFL")]))
@@ -1376,7 +1379,7 @@ def check_scenarios():
                            "object_value": 5e9, "region": "Ташкент", "construction": "reinforced",
                            "activity": "warehouse"}, {"seismic_zone": 9})
     sc = a["scenarios"]
-    ok("склад класса 8 в 9-балльной зоне: сценарии = risk_analytics (со сменой названий)",
+    ok("склад класса 8 в 9-балльной зоне: сценарии = risk_analytics (те же названия)",
        sc["rule"] == "property8"
        and all(sc[s.lower()]["amount"] == round(an["scenarios"][MAP_RA[s]]["amount"]) for s in ("PML", "EML", "MFL")),
        sc)
@@ -4563,9 +4566,9 @@ def check_analytics():
                             "sum_insured": CRANE_MUST["sum_insured"], "object_value": CRANE_MUST["object_value"],
                             "region": CRANE_MUST["region"], "vehicle_type": "special", "year": 2026},
                       {"losses_3y": {"count": 0}, "protection": "immo"})
-    ok("40а: «что если» с иммобилайзером — EML акта = PML модуля с тем же входом",
-       "immo" in wi and wi["immo"]["eml"] == round(an2["scenarios"]["PML"]["amount"])
-       and wi["immo"]["eml"] < an["scenarios"]["items"][1]["amount"], (wi.get("immo"), an2["scenarios"]["PML"]))
+    ok("40а: «что если» с иммобилайзером — EML акта = EML модуля с тем же входом",
+       "immo" in wi and wi["immo"]["eml"] == round(an2["scenarios"]["EML"]["amount"])
+       and wi["immo"]["eml"] < an["scenarios"]["items"][1]["amount"], (wi.get("immo"), an2["scenarios"]["EML"]))
     fr = an["franchise"]
     ok("40а: таблица франшиз 0,5/1/2/5 % (потолок класса 3 — 5 %), вывод акта прежний",
        fr["available"] and [r["pct"] for r in fr["rows"]] == [0.5, 1.0, 2.0, 5.0]
@@ -4843,8 +4846,9 @@ def check_review_fixes():
            and not re.search(r"[А-Яа-яЁё]", " ".join(r["lines"])), r["lines"])
 
     # --- 41.4. пример оборудования для снимков: запрос филиала даёт вид, деятельность и описание ---
-    br_file = ROOT_DIR / "sandbox" / "br30" / "sorov_equipment.docx"
-    ok("41.4: образец запроса филиала для снимков оборудования лежит в sandbox/br30", br_file.exists())
+    # учебная копия запроса филиала (те же поля, выдуманные названия сторон) — tests/fixtures, в репозитории
+    br_file = ROOT_DIR / "tests" / "fixtures" / "branch_request_equipment.docx"
+    ok("41.4: учебный запрос филиала для снимков оборудования лежит в tests/fixtures", br_file.exists())
     if br_file.exists():
         st, b = upload([("sorov_equipment.docx", DOCX_MIME, br_file.read_bytes())], {"lang": "ru"})
         st, ae_ = call("POST", "/act/make", {"session": b["session"], "lang": "ru", "recognized": b["recognized"],
@@ -9390,6 +9394,112 @@ def check_one_page_0610(crane_aid):
        'w:left="850"' in xml and 'w:top="850"' in xml and '<w:sz w:val="20"/>' in sty and "<wp:inline" not in xml)
 
 
+# ------------------------------------------------------------------ 50. модель ставки ТЗ 13.10.2026
+
+def rm_legacy(on: bool):
+    """Переключатель act_settings.rate_model.enabled для тестов: True — прежний путь (тариф × поправка уровня,
+    вилка, правило 4 признаков), False — модель ставки. Значение по умолчанию у модели — enabled = true."""
+    rm.DEFAULTS["enabled"] = not on
+    db.invalidate_reference()
+
+
+def check_rate_model_act():
+    print("50. Модель ставки ТЗ 13.10.2026 в акте: одна ставка, один уровень, пояснение, «как посчитано»")
+    rm_legacy(False)
+    clear_settings()
+    # эталон ТЗ 13.10.2026: автокран 0318, 2 945 000 000 сум, 365 дн., открытая площадка, убытков 0, без фото.
+    # Было (прежний путь): 0,35 % × 1,2 (умеренный уровень) = 0,42 %, премия 12 369 000 сум.
+    # Стало: r_рын кл. 3 (НАПП, итог 2025) 0,0897 % × (1 + θ 0,10 + c 0) / (1 − L 0,591) = 0,2413 %;
+    # × K_об 1,15 (открытая площадка) × K_рег 1,00 × K_кл 0,95 (убытков нет) = 0,2636 % < минимума 0,35 % →
+    # ставка 0,35 %, премия 10 307 500 сум.
+    with db.tx() as con:
+        ref = db.load_reference(con)
+        mk = (ref.rate_inputs.get("3") or {}).get("market") or {}
+    st, a = call("POST", "/act/make", {"lang": "ru", "must": CRANE_MUST,
+                                       "optional": dict(CRANE_OPT, object_kind="truck_crane")})
+    r = a.get("rate") or {}
+    ok("эталон ТЗ 13.10.2026: автокран — ставка 0,35 % (минимум), премия 10 307 500 сум",
+       st == 200 and r.get("applied_pct") == 0.35 and r.get("min_applied") and a["premium"]["amount"] == 10_307_500,
+       (st, r.get("applied_pct"), a.get("premium")))
+    hc = a.get("how_computed") or {}
+    gross = mk.get("r_pct", 0) * 1.10 / (1 - 0.591)
+    ok("техническая ставка = r_рын × 1,10 / 0,409 (рынок НАПП из справочника)",
+       abs(hc.get("r_tech", 0) - round(gross, 6)) < 1e-6 and abs(hc.get("k_object", 0) - 1.15) < 1e-9
+       and hc.get("k_client") == 0.95, (hc.get("r_tech"), gross, hc.get("k_object"), hc.get("k_client")))
+    ok("в JSON одна ставка: rate.applied_pct и rate_trace, без base/adj/calc в сводке",
+       "rate_trace" in r and r["rate_trace"] and not ({"base_pct", "adj_pct", "calc_pct"} & set(r)), sorted(r))
+    ok("каждый шаг rate_trace — с источником и датой",
+       all({"step", "value", "source", "date", "note"} <= set(x) for x in r["rate_trace"]), r["rate_trace"][:2])
+    ok("вилка и прочие ставки — только в how_computed",
+       "rate_fork" not in a and "rate_fork" in hc and hc.get("base_pct") == 0.35, sorted(hc))
+    ok("рыночная ставка — строкой для сравнения", "для сравнения" in (r.get("market_compare") or ""),
+       r.get("market_compare"))
+    ex = (r.get("explain") or {})
+    ok("пояснение ставки до 3 строк, с минимумом INSON",
+       ex.get("text") and len(ex.get("lines") or []) <= 3 and "минимум INSON" in ex["text"], ex)
+    rows = {x["label"]: x for x in a["sections"][3]["rows"]}
+    ok("в разделе 4 нет вилки, базовой ставки и поправки уровня",
+       not any(k in rows for k in ("Базовая ставка", "Поправка по уровню риска")) and "Пояснение ставки" in rows,
+       list(rows))
+    ok("один уровень риска: из K_об 1,15 — умеренный (и в rate, и в risk)",
+       a["risk"]["level"] == "moderate" and r.get("risk_level") == "moderate", (a["risk"]["level"], r.get("risk_level")))
+    ok("нет фото и документов — «На рассмотрение», ставка та же",
+       a["decision"]["code"] == "review" and r["applied_pct"] == 0.35, a["decision"])
+    ok("франшиза не нужна (мелких убытков нет, клиент не просит)", a["franchise"]["needed"] is False, a["franchise"])
+    for lg in ("uz", "en"):
+        st2, b = call("POST", "/act/make", {"lang": lg, "must": CRANE_MUST,
+                                            "optional": dict(CRANE_OPT, object_kind="truck_crane")})
+        txt = (b.get("rate") or {}).get("explain", {}).get("text") or ""
+        ok(f"пояснение на {lg} без кириллицы", st2 == 200 and txt and not re.search("[А-Яа-яЁё]", txt), txt)
+    # экскаватор на стройплощадке, гусеничный, 2021 г., 1 убыток: одна ставка и один уровень
+    st, e = call("POST", "/act/make", {"lang": "ru", "must": CRANE_MUST,
+                                       "optional": {"object_kind": "excavator", "location": "construction", "year": 2021,
+                                                    "class_fields": {"veh_group": "special_tracked"},
+                                                    "losses_3y": {"count": 1, "small_count": 0, "amount": 1_000_000}}})
+    er = e.get("rate") or {}
+    s4 = [x["label"] for x in e["sections"][3]["rows"]]
+    ok("экскаватор: одна ставка (строка «Рекомендуемый тариф» одна) и один уровень — высокий (K_об 1,44)",
+       st == 200 and s4.count("Рекомендуемый тариф") == 1 and s4.count("Уровень риска") == 1
+       and e["risk"]["level"] == "high" == er.get("risk_level") and abs(e["how_computed"]["k_object"] - 1.44) < 1e-9,
+       (s4, e["risk"]["level"], e.get("how_computed", {}).get("k_object")))
+    ok("экскаватор: ставка = r_тех × 1,44 × 1,10 (1 убыток), выше минимума",
+       abs(er["applied_pct"] - round(gross * 1.44 * 1.10, 4)) < 1e-4 and not er["min_applied"], er.get("applied_pct"))
+    # франшиза: только ≥ 2 мелких убытка или просьба клиента
+    st, f1 = call("POST", "/act/make", {"lang": "ru", "must": CRANE_MUST,
+                                        "optional": dict(CRANE_OPT, object_kind="excavator", location="construction",
+                                                         class_fields={"veh_group": "special_tracked"})})
+    ok("высокий уровень сам по себе франшизы не требует", f1["risk"]["level"] == "high"
+       and f1["franchise"]["needed"] is False, f1["franchise"])
+    st, f2 = call("POST", "/act/make", {"lang": "ru", "must": CRANE_MUST,
+                                        "optional": dict(CRANE_OPT, losses_3y={"count": 2, "small_count": 2,
+                                                                               "amount": 2_000_000})})
+    ok("два мелких убытка — франшиза рекомендована", f2["franchise"]["needed"] is True
+       and [g["code"] for g in f2["franchise"]["grounds"]] == ["fr_g_small_losses"], f2["franchise"])
+    st, f3 = call("POST", "/act/make", {"lang": "ru", "must": CRANE_MUST,
+                                        "optional": dict(CRANE_OPT, want_lower_premium=True)})
+    ok("просьба клиента — франшиза рекомендована", f3["franchise"]["needed"] is True
+       and [g["code"] for g in f3["franchise"]["grounds"]] == ["fr_g_client"], f3["franchise"])
+    st, f4 = call("POST", "/act/make", {"lang": "ru", "must": CRANE_MUST,
+                                        "optional": dict(CRANE_OPT, losses_3y={"count": 3, "small_count": 0,
+                                                                               "amount": 9_000_000})})
+    ok("3 убытка за 3 года — «На рассмотрение»", f4["decision"]["code"] == "review"
+       and any("Убытков за 3 года: 3" in c for c in f4["decision"]["checks"]), f4["decision"])
+    # переключатель: enabled = false — прежний путь, прежняя контрольная премия 12 369 000
+    with db.tx() as con:                 # правка администратора (как PUT /act/settings), без API
+        con.execute("INSERT INTO act_settings (created_at, created_by, settings_json, calibrated, note) "
+                    "VALUES (?,?,?,?,?)", (db.now(), "тест", _json.dumps({"rate_model": {"enabled": False}}), 0,
+                                           "сравнение"))
+    db.invalidate_reference()
+    st, old = call("POST", "/act/make", {"lang": "ru", "must": CRANE_MUST,
+                                         "optional": dict(CRANE_OPT, object_kind="truck_crane")})
+    ok("переключатель rate_model.enabled = false: прежний путь (0,42 %, 12 369 000 сум, вилка в сводке)",
+       old["rate"]["applied_pct"] == 0.42 and old["premium"]["amount"] == 12_369_000 and "rate_fork" in old,
+       (old["rate"].get("applied_pct"), old["premium"]))
+    clear_settings()
+    rm_legacy(True)
+
+
+
 def main():
     ORIG.update(chat_raw=llm.chat_raw, enabled=llm.enabled, supports_files=llm.supports_files, post=llm._post)
     llm.chat_raw = fake_chat_raw
@@ -9398,6 +9508,10 @@ def main():
     try:
         with temp_db("surveyor-act-test.db"):
             db.ensure_schema()
+            # чистая машина (git clone → tools/db_build.py): статистики НАПП и stat.uz в базе ещё нет — в копию
+            # из data/parsed и tests/fixtures; на рабочей базе таблицы уже заполнены и не меняются
+            ensure_market_stats()
+            ensure_stat_series()
             # собственные средства и резервы — фиксированные тестовые (как были временные 180 / 240 млрд): баллы,
             # лимиты и склонения в проверках не зависят от того, что сейчас в рабочей базе (с 03.10.2026 сервер
             # заменяет временные цифры рэнкингом snsratings — это проверяет tests/test_ranking.py)
@@ -9407,6 +9521,11 @@ def main():
                             "VALUES ('2026-07-01', 180e9, 240e9, 'временно, до данных бухгалтерии (тест)')")
             act.DIR = folder
             guest.reset()
+            # модель ставки ТЗ 13.10.2026 — отдельный раздел 50; остальные проверки этого файла — прежний путь
+            # (переключатель act_settings.rate_model.enabled = false): они проверяют вилку, поправку уровня и
+            # правило 4 признаков, которые остаются запасным путём для сравнения
+            check_rate_model_act()
+            rm_legacy(True)
             check_engine()
             a, sid = check_crane()
             aid = a["id"]

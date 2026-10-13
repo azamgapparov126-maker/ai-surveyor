@@ -121,15 +121,13 @@ TX_SCENARIOS = {
                       "uz": "oʻgʻirlik, suv bosishi va boshqa zarar: xonalar koʻrsatilmagan — butun obyekt bitta xona "
                             "deb hisoblanadi",
                       "en": "theft, water and other damage: premises not stated — the whole object is one premises"},
-    "sc_how_names": {"ru": "Названия сценариев в модуле аналитики рисков переставлены (там EML — «защита сработала», "
-                           "PML — «сработала частично»); в акте — порядок заказчика: PML акта = EML модуля, EML акта = "
-                           "PML модуля, MFL — тот же",
-                     "uz": "Xavf tahlili modulida ssenariy nomlari almashgan (u yerda EML — «himoya ishladi», PML — "
-                           "«qisman ishladi»); dalolatnomada buyurtmachi tartibi: dalolatnoma PML = modul EML, "
-                           "dalolatnoma EML = modul PML, MFL — oʻsha",
-                     "en": "The risk analytics module swaps the scenario names (there EML is «protection worked», PML "
-                           "is «worked partly»); the report uses the client's order: report PML = module EML, report "
-                           "EML = module PML, MFL is the same"},
+    "sc_how_names": {"ru": "Названия сценариев в акте и в модуле аналитики рисков совпадают (с 13.10.2026): PML — "
+                           "защита сработала штатно, EML — частично, MFL — не сработала; PML ≤ EML ≤ MFL",
+                     "uz": "Dalolatnomadagi va xavf tahlili modulidagi ssenariy nomlari bir xil (13.10.2026 dan): PML — "
+                           "himoya odatdagidek ishladi, EML — qisman, MFL — ishlamadi; PML ≤ EML ≤ MFL",
+                     "en": "Scenario names in the report and in the risk analytics module are the same (since "
+                           "13.10.2026): PML — protection worked as intended, EML — partly, MFL — failed; "
+                           "PML ≤ EML ≤ MFL"},
     "sc_ret_eml_within": {"ru": "EML укладывается в удержание", "uz": "EML ushlab qolish doirasida",
                           "en": "EML is within the retention"},
     "sc_ret_eml_excess": {"ru": "EML выше расчётного удержания по экспертной таблице на {x} — рекомендуем рассмотреть "

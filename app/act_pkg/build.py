@@ -13,9 +13,10 @@ from .. import class_templates as ctpl
 from .. import act_market as am
 from .. import act_texts as tx
 from .. import db, valuation
+from .. import product_parts as pp
 from ..risk_analytics import load_thresholds
 
-from .common import clause_catalog, insurer_name, _iso, load_settings, _now, tariff_version
+from .common import clause_catalog, insurer_name, _iso, load_settings, _now, tariff_version, _today
 from .recognize import preferred
 from .regions import region_for_modules, region_for_stats, region_scope
 from .view_fmt import ROWS_BY_GROUP
@@ -24,9 +25,10 @@ from .terms import credit_rule, _policyholder, _trust_doc, trust_sources
 from .market import fx_verify
 from .calc import (veh_measure_codes,
     _analytics_block, _annual_view, _below_min_block, _below_min_decision, _doc_checks, _fork_finish,
-    _fork_prepare, _kind_from_text, _location_from_text, _min_block, _min_how, _min_info, _napp_settings,
+    _fork_prepare, _kind_from_text, _min_block, _min_how, _min_info, _napp_settings,
     _net_calibrated, _no_products_rate, _region_scope_stats, _template_block, _with_clauses)
 from .build_parts import _apply_objects, _apply_parts
+from . import facts as of
 
 
 # --------------------------------------------------------------------------- #
@@ -49,6 +51,7 @@ def build_data(con, clean: dict, owner: str, lang: str) -> dict:
     _session_upload(con, B)
     _inspection_in(B)
     _object_in(con, B)
+    _facts_in(B)
     _risk_in(B)
     _docs_in(B)
     _rate_in(con, B)
@@ -133,6 +136,11 @@ def _object_in(con, B) -> None:
     B.views_req = views_req
 
 
+def _facts_in(B) -> None:
+    """Факты об объекте одним словарём (act_pkg/facts): акт, факторы, уровень риска и аналитика читают только его."""
+    B.facts = of.build_facts(B.o, B.recognized, B.upload, B.st)
+
+
 def _risk_in(B) -> None:
     """Год, документы, место хранения и уровень риска по правилу."""
     ai_ok, damages, o, recognized, st, upload = B.ai_ok, B.damages, B.o, B.recognized, B.st, B.upload
@@ -144,16 +152,14 @@ def _risk_in(B) -> None:
     documents = "document" in views_seen
     if o.get("documents_provided") is not None:
         documents = bool(o["documents_provided"])
-    location = o.get("location")
-    if not location:
-        loc_rec = (preferred(recognized, "location") or {}).get("value") or ""
-        location = _location_from_text(loc_rec)
+    # место и охрана — из фактов об объекте (ввод, иначе место с фото словами)
+    location = B.facts["location"]
 
     # входы правила уровня; части и объекты считают свой уровень от копии этих же входов
     risk_in = {"inspected": ai_ok, "damages": damages,
                "condition": o.get("condition") or (upload.get("condition") if ai_ok else None),
-               "year": y, "location": location, "guard": o.get("guard"),
-               "losses_count": o.get("losses_count"), "documents": documents, "today": date.today()}
+               "year": y, "location": location, "guard": B.facts["guard"],
+               "losses_count": o.get("losses_count"), "documents": documents, "today": _today()}
     risk = ae.risk_level(risk_in, st)
     B.documents, B.location, B.risk, B.risk_in, B.y = documents, location, risk, risk_in, y
 
@@ -190,11 +196,16 @@ def _rate_in(con, B) -> None:
     product, ref, risk, st, term, tpl = B.product, B.ref, B.risk, B.st, B.term, B.tpl
     # минимальная ставка страховщика на дату акта (app/min_rates.py): источник (правка администратора или тарифная
     # политика) и тип ставки продукта (annual | fixed); тот же минимум движок берёт из справочника (db.load_reference)
-    min_info = _min_info(con, product, o.get("payer_type"))
+    # тип клиента (ТЗ 13.10.2026, день 2.3): строка тарифа по физлицу или юрлицу; payer_type ввода сильнее
+    payer = o.get("payer_type") or pp.PAYER_OF.get(m.get("client_type"))
+    min_info = _min_info(con, product, payer)
     rate_type = (min_info or {}).get("rate_type") or "annual"
-    rate_res = ae.rate(ref, product, cls, risk["level"], m["sum_insured"], term, otype, o.get("payer_type"), st,
-                       rate_type=rate_type)
+    # часть продукта на дату осмотра (product_parts): своя база и минимум; нет части — прежний путь
+    part = pp.rate_part(con, (product or {}).get("code"), cls, m.get("client_type"), _today()) if product else None
+    rate_res = ae.rate(ref, product, cls, risk["level"], m["sum_insured"], term, otype, payer, st,
+                       rate_type=rate_type, part=part)
     _min_how(rate_res, min_info)
+    B.part, B.payer = part, payer
     # класс без продуктов страховщика (16у, 18) — акт по шаблону, ставка не определена: тарифной политики по классу
     # нет, экспертная базовая ставка справочника (если есть) ставкой акта не становится
     if not product and ctpl.products_count(con, cls) == 0:
@@ -204,7 +215,9 @@ def _rate_in(con, B) -> None:
     # факторы объекта по подгруппам класса (02.10.2026, factor_groups шаблона): режим reference — ставка акта прежняя,
     # множитель справочно (отметка вилки); apply — ставка акта = тариф × поправка уровня × множитель, не ниже минимума,
     # до вилки, франшизы и сверок. Комплексный продукт — по шаблону класса каждой части (_part_calc)
-    fa = ae.factor_adjust(o.get("class_fields"), tpl, st, o)
+    # входы факторов — из фактов об объекте: вариант износа по проценту, место с фото, охрана
+    f_cf, f_rf = of.factor_inputs(o, B.facts)
+    fa = ae.factor_adjust(f_cf, tpl, st, f_rf)
     # фон региона к факторам со ссылкой на stat.uz (stat_ref, 02.10.2026): только чтение stat_series, ставку не меняет
     aa.factor_stats(con, fa, region_for_stats(m))
     if not multi:
@@ -239,6 +252,9 @@ def _value_in(con, B) -> None:
     clause_codes = ctpl.for_group(tpl.get("clauses"), group)
     clauses = ae.clauses_by_codes(clause_codes, clause_catalog()) if clause_codes is not None \
         else ae.clauses(group, clause_catalog())
+    # у физлица нет оговорок работодателя (настройка client_type.yur_only_clauses)
+    keep = ae.client_filter([c["code"] for c in clauses], st, m.get("client_type"), "clauses")
+    clauses = [c for c in clauses if c["code"] in keep]
     disc = ae.discrepancies(recognized, {"year": o.get("year"), "sum_insured": m["sum_insured"],
                                          "object_value": m["object_value"],
                                          "term_days": None if (term_from_request or term_from_contract)
@@ -263,7 +279,8 @@ def _modules_in(con, B) -> None:
                         S=m["sum_insured"], V=m["object_value"], region=region_ra, term_days=o.get("term_days"),
                         year=y, o=o, recognized=recognized,
                         text=" ".join(x for x in (obj_doc.get("original"), obj_doc.get("translated"),
-                                                  o.get("object_type")) if x))
+                                                  o.get("object_type")) if x),
+                        facts_optional=of.ra_optional(B.facts, cls, B.veh_group, st))
     if not ctx.get("ok"):
         block_errors.append({"block": "risk_analytics", "error": ctx.get("error")})
     scen = ax.scenarios(ctx, cls, m["sum_insured"], template=tpl, V=m["object_value"], fields=o.get("class_fields"))
@@ -282,7 +299,8 @@ def _modules_in(con, B) -> None:
     try:
         meas = ax.measures(con, ctx, rate_res, cls=cls, group=group_ra, kind=kind_ra, S=m["sum_insured"],
                            V=m["object_value"], o=o, location=location, statutory=statutory, th=th,
-                           premium=premium_final, codes=veh_measure_codes(tpl, B.veh_group, group_ra))
+                           premium=premium_final, codes=ae.client_filter(veh_measure_codes(tpl, B.veh_group, group_ra),
+                                                                         st, m.get("client_type"), "measures"))
     except Exception as e:
         block_errors.append({"block": "measures", "error": type(e).__name__})
         meas = {"items": [], "total": {"count": 0}, "error": type(e).__name__}
@@ -338,6 +356,12 @@ def _missing_in(B) -> None:
         present.add("year")
     if o.get("location"):
         present.add("location")
+    # факты об объекте: поля класса и адрес закрывают строки раздела 1
+    fc = B.facts
+    for key, have in (("location", fc["address"] or fc["location"]), ("total_area", fc["area_m2"] is not None),
+                      ("floors", fc["floors"] is not None), ("mileage", fc["mileage_text"])):
+        if have:
+            present.add(key)
     if kind:
         present.add("object_type")
     if o.get("construction"):
@@ -409,7 +433,11 @@ def _assemble(con, B) -> None:
                  "sum_insured": B.m["sum_insured"], "object_value": B.m["object_value"], "region": B.m["region"],
                  "region_code": B.m.get("region_code"), "product_classes": B.m.get("product_classes") or [],
                  # территория текстом и особый регион (02.10.2026): republic | outside | None
-                 "region_text": B.m.get("region_text"), "region_scope": region_scope(B.m)},
+                 "region_text": B.m.get("region_text"), "region_scope": region_scope(B.m),
+                 # тип клиента (ТЗ 13.10.2026, день 2.3): fiz | yur и откуда (input | payer_type | product | default)
+                 "client_type": B.m.get("client_type"), "client_type_source": B.m.get("client_type_source")},
+        # часть продукта, по которой посчитана ставка (product_parts); None — прежний путь
+        "product_part": B.part,
         "multi_class": len(B.m.get("product_classes") or []) > 1,
         "sources_downgraded": B.downgraded,
         "optional": {k: v for k, v in B.o.items() if v is not None},
@@ -431,7 +459,8 @@ def _assemble(con, B) -> None:
         # дополнения 30.09.2026: аналитика раздела 4, описание объекта из документа, адрес объекта
         "analytics": B.analytics, "object_doc": B.obj_doc,
         "exchange": B.exchange,
-        "object_facts": {"address": ((B.upload.get("contract") or {}).get("fields") or {}).get("address")},
+        # факты об объекте (13.10.2026, ТЗ день 1): один словарь для акта и модулей; старые акты — object_facts
+        "object": B.facts,
         # шаблон анализа класса (30.09.2026): версия и то, что акт из него взял; подписи — на языке при выдаче
         "template": _template_block(B.tpl_row, B.group, B.group_ra, B.views_req, B.clause_codes, B.tpl_risks, B.scen,
                                     B.o.get("class_fields")),
@@ -483,7 +512,9 @@ def _finish_parts(con, B) -> None:
              "region_ra": region_ra, "term": term, "fs": fs,
              "risk_in": dict(B.risk_in),
              "docs": docs, "mchecks": mchecks, "disc": disc, "inspection": inspection, "missing_key": missing_key,
-             "block_errors": block_errors}
+             "block_errors": block_errors,
+             # тип клиента и дата осмотра — для частей продукта (product_parts) и оговорок
+             "client_type": m.get("client_type"), "payer": B.payer, "as_of": _today()}
         _apply_parts(con, clean, D, C)
         # факторы объекта комплексного продукта — по каждой части (шаблон класса части)
         D["factor_adjustment"] = {"by_parts": True, "mode": ae.factor_settings(st)["mode"],
@@ -516,7 +547,7 @@ def _finish_objects(con, B) -> None:
         X = {"ref": B.ref, "st": B.st, "m": B.m, "o": B.o, "cls": B.cls, "product": B.product, "tpl": B.tpl,
              "kind": B.kind,
              "class_hint": B.upload.get("class_hint") or "", "special": B.special_product, "y": B.y, "term": B.term,
-             "rate_type": B.rate_type, "min_info": B.min_info,
+             "rate_type": B.rate_type, "min_info": B.min_info, "part": B.part, "payer": B.payer,
              "no_products": not B.product and ctpl.products_count(con, B.cls) == 0,
              "fork_in": B.fork_in, "fs": B.fs, "fr": B.fr, "region_ra": B.region_ra, "recognized": B.recognized,
              "ai_ok": B.ai_ok, "model_ids": model_ids, "damages": B.damages, "upload_files": B.upload_files,
@@ -599,7 +630,7 @@ def market_block(con, mk: dict, owner: str, st: dict, m: dict, o: dict, recogniz
     items = [dict(r) for r in mk["listings"]]
     src = am.trust_listings(items, shots)
     edits = src.pop("edits")
-    shot_date = date.today()
+    shot_date = _today()
     if shots and shots.get("shot_date"):
         try:
             shot_date = date.fromisoformat(shots["shot_date"])
@@ -615,7 +646,7 @@ def market_block(con, mk: dict, owner: str, st: dict, m: dict, o: dict, recogniz
     # курс сотрудника — только тот, что он ввёл сам (fx.by = employee или старое поле usd_rate)
     emp_rate = claim["rate"] if claim and claim.get("by") == "employee" else mk.get("usd_rate")
     if not fx and emp_rate:
-        fx = {"rate": emp_rate, "by": "employee", "as_of": (claim or {}).get("as_of") or date.today().isoformat()}
+        fx = {"rate": emp_rate, "by": "employee", "as_of": (claim or {}).get("as_of") or _today().isoformat()}
     rate = (fx or {}).get("rate")
     est = ae.market_estimate(items, declared=m["object_value"], sum_insured=m["sum_insured"], settings=st,
                              shot_date=shot_date, usd_rate=rate)

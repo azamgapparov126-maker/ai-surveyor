@@ -161,8 +161,10 @@ def main():
                 "source_file", "source_date", "note"}
         check(all(keys <= set(x) for x in facts), "у каждого факта все поля схемы")
         napp = [x for x in facts if x["source_file"] and x["topic"] != "company_finance"]
-        lib = {p.name for p in mk.LIBRARY_NAPP.glob("*.xlsx")}
-        check(all(x["source_file"] in lib for x in napp), "source_file каждого факта НАПП — файл из library/03_Рынок_НАПП")
+        # отчёты НАПП (xlsx) в library/ есть только на рабочей машине; в репозитории те же файлы — в data/inbox
+        lib = {p.name for p in mk.LIBRARY_NAPP.glob("*.xlsx")} | {p.name for p in (ROOT / "data" / "inbox").glob("*.xlsx")}
+        check(all(x["source_file"] in lib for x in napp),
+              "source_file каждого факта НАПП — файл отчёта (library/03_Рынок_НАПП или data/inbox)")
 
         print("5. Финансы страховщиков (рэнкинг snsratings)")
         rk = [x for x in facts if x["topic"] == "company_finance"]

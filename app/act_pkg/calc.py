@@ -2,7 +2,6 @@
 Расчётные блоки акта: минимальная ставка, вилка ставки, аналитика, сверки с документами, решение,
 оценка заниженной ставки, шаблон класса.
 """
-from datetime import date
 from typing import Optional
 
 from .. import act_analytics as aa
@@ -13,6 +12,7 @@ from .. import db
 from .. import min_rates as mrs
 from ..analysis_docs import OBJECT_TYPE_WORDS, _one
 
+from .common import _today
 from .terms import _attach_trust, _with_object
 
 
@@ -23,7 +23,7 @@ def _min_info(con, product: Optional[dict], payer_type: Optional[str] = None) ->
     if not code:
         return None
     try:
-        return mrs.on_date(con, code, date.today(), payer_type)
+        return mrs.on_date(con, code, _today(), payer_type)
     except Exception as e:
         print("акт: минимальная ставка страховщика не прочитана:", type(e).__name__)
         return None
@@ -127,7 +127,7 @@ def _below_min_block(D: dict, o: dict, req: Optional[dict], ct: Optional[dict], 
     if mrate is None:
         mrate = ((D.get("rate_fork") or {}).get("market_data") or {}).get("rate_pct")
     new_years = int(st.get("new_object_years", 1))
-    obj_new = (date.today().year - int(y) <= new_years) if y else None
+    obj_new = (_today().year - int(y) <= new_years) if y else None
     out = ae.below_min_assess(
         requested_pct=rq, requested_source=src, min_pct=rate_res.get("min_pct"),
         rate_type=rate_res.get("rate_type") or "annual", term_days=rate_res.get("term_days") or 365,
@@ -252,7 +252,10 @@ def veh_measure_codes(tpl: dict, veh_group: Optional[str], group_ra: str) -> Opt
 
 def _analytics_block(con, ctx, cls, product_code, region_ra, S, V, term, rate_res, scen, meas, level, statutory, th,
                      group_ra, tpl_risks, block_errors, veh_group=None) -> dict:
-    """Аналитика раздела 4 (act_analytics.build) для одного класса; сбой — блок с reason = error."""
+    """Аналитика раздела 4 (act_analytics.build) для одного класса; сбой — блок с reason = error.
+    Модель ставки (ТЗ 13.10.2026): уровень риска — один на акт, из K_об (rate_model), а не правило 4 признаков."""
+    if ae.model_on(rate_res) and (rate_res.get("rate_model") or {}).get("available"):
+        level = rate_res["rate_model"]["risk_level"]
     try:
         analytics = aa.build(con, ctx, cls=cls, product_code=product_code, region=region_ra, S=S, V=V,
                              term_days=term, rate_res=rate_res, scen=scen, meas=meas, act_level=level,

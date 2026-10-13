@@ -176,13 +176,18 @@ ADMIN_METHOD_PATH = {("POST", "/valuation/norms"), ("DELETE", "/valuation/norms"
                      ("POST", "/tg/users/manual"),
                      ("POST", "/reference/products/import"), ("POST", "/reference/products/import/apply"),
                      ("POST", "/claims/import"), ("POST", "/claims/import/apply"),
-                     ("PUT", "/claims/yearly")}             # итоги по году и продукту — ручной ввод (06.10.2026)
+                     ("PUT", "/claims/yearly"),             # итоги по году и продукту — ручной ввод (06.10.2026)
+                     # ТЗ 13.10.2026, день 2: импорт частей продуктов и правка актуарного отчёта
+                     ("POST", "/reference/product-parts/import"), ("POST", "/reference/product-parts/import/apply"),
+                     ("PUT", "/reference/actuarial-reports")}
 # то же по началу пути: у удаления нормы износа код в адресе (/valuation/norms/{code}),
 # и точное совпадение из ADMIN_METHOD_PATH его не ловило
 ADMIN_METHOD_PREFIX = {("DELETE", "/valuation/norms/"),
                        ("PUT", "/act/templates/"),           # шаблоны анализа по классам (app/act.py)
                        # минимальные ставки страховщика: правка и импорт из Excel (app/min_rates.py)
                        ("PUT", "/reference/min-rates/"), ("POST", "/reference/min-rates/"),
+                       # части продукта: новая версия JSON-ом (/reference/product-parts/{code}) — администратор
+                       ("PUT", "/reference/product-parts/"),
                        # карточка сотрудника и сброс пароля (/tg/users/{uid}, /tg/users/{uid}/reset-password);
                        # make-admin и revoke-admin под тот же префикс — они и так только для админа
                        ("PUT", "/tg/users/"), ("POST", "/tg/users/")}

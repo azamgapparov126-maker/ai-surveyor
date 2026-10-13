@@ -81,6 +81,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import rm_modes as M  # noqa: E402
 from tmpdb import temp_db  # noqa: E402
 from app import db, franchise as fr, risk_analytics as ra  # noqa: E402
 
@@ -125,7 +126,46 @@ EX_D = ({"class_code": "8", "object_type": "Склад", "sum_insured": 10e9, "o
          "compartments": {"count": 3, "largest_value": 3e9}})
 
 
+# эталон ТЗ 13.10.2026 (модель ставки): {(функция, подпись): значение}; прежние числа — в проверках ниже
+NEW = {
+    # склад кл. 9, 4,2 млрд: 0,086207 % (r_рын НАПП 0,022356 × 1,10 / 0,271 × K_кл 0,95) — было 6 048 000
+    ('test_a_low_no_franchise', 'базовая премия, сум'): 3_620_694,
+    ('test_a_low_no_franchise', 'what_if(3%): премия, сум'): 2_534_476,
+    ('test_a_low_no_franchise', 'what_if(3%): изменение премии, сум'): -1_086_218,
+    ('test_a_client_request', 'премия при франшизе 1%, сум'): 3_077_592,
+    # производство 8/9, 50 млрд: 94 604 500 (было 612 927 966; без франшизы 0,5 % — 102 831 000, было 666 226 050)
+    ('test_b1_no_grounds', 'премия без франшизы, сум'): 102_831_000,
+    ('test_b2_client_request', 'базовая премия (с франшизой 0,5% из заявки), сум'): 94_604_500,
+    ('test_b2_client_request', 'премия при франшизе 5%, сум'): 61_698_800,
+    ('test_b2_client_request', 'эффект на премию, сум'): -32_905_700,
+    ('test_b2_client_request', 'премия при франшизе пользователя, сум'): 94_604_500,
+    # деревянный склад: ставка к рынку ниже — уровень «Высокий» вместо «Критического», франшиза 10 % по пожару
+    ('test_c_critical', 'уровень риска'): 'Высокий',
+    ('test_c_critical', 'франшиза, %'): 10.0,
+    ('test_c_critical', 'код решения'): 'accept_conditions',
+    ('test_c_critical', 'решение'): 'принять с франшизой и условиями (мероприятия по снижению риска)',
+    ('test_c_critical', 'peril code'): 'fire',
+    ('test_c_critical', 'peril pct'): 10.0,
+    # ставка упирается в 3 × тарифа 0807 (0,15 %) — «на рассмотрение»: 100 млрд × 0,15 % = 150 000 000
+    ('test_c_critical', 'базовая премия, сум'): 150_000_000,
+    ('test_c_critical', 'премия с франшизой 90% и франшизой по риску, сум'): 86_364_000,
+    ('test_d_dominant_peril_only', 'уровень риска'): 'Низкий',
+    ('test_d_dominant_peril_only', 'франшиза по риску, %'): 1.0,
+    ('test_d_dominant_peril_only', 'базовая премия, сум'): 15_000_000,
+    ('test_d_dominant_peril_only', 'премия с франшизой по риску, сум'): 14_939_400,
+    ('test_e_small_losses_only', 'базовая премия, сум'): 4_764_060,
+    ('test_e_small_losses_only', 'премия с франшизой 2%, сум'): 3_573_024,
+    ('test_f_statutory', 'базовая премия, сум'): 7_300_100,
+    ('test_f_statutory', 'what_if: премия без изменений, сум'): 7_300_100,
+    # экскаватор: минимум 0318 0,35 % × 1,2 млрд = 4 200 000 (было 17 496 000); франшиза ниже минимума не опускает
+    ('test_g_cap_warning', 'базовая премия, сум'): 4_200_000,
+    ('test_g_cap_warning', 'премия при франшизе 10%, сум'): 4_200_000,
+    ('test_thresholds_in_db', 'dominant after 0,30'): False,
+}
+
+
 def eq(got, want, what, tol=1.0):
+    want = M.want(NEW, what, want)
     ok = abs(got - want) <= tol if isinstance(want, (int, float)) and not isinstance(want, bool) else got == want
     assert ok, f"{what}: получено {got}, ожидалось {want}"
     print(f"  ok  {what}: {got}")
@@ -255,13 +295,14 @@ def test_c_critical():
         assert a["premium"] > 0, f"альтернатива {a['code']}: премия {a['premium']} должна быть больше нуля"
     eq(r["decision"], "принять только с франшизой либо отказать", "решение")
     p = r["franchise"]["peril"]
-    assert p and p["code"] == "earthquake" and p["pct"] == 90, p
+    assert p and p["code"] == M.want(NEW, "peril code", "earthquake") and p["pct"] == M.want(NEW, "peril pct", 90), p
     print(f"  ok  франшиза по риску: {p['name']} {p['pct']}% (доля риска {p['share_of_net_pct']}% нетто)")
     base = r["options"][0]["premium"]
     with_fr = next(o for o in r["options"] if o["key"] == "franchise")["premium"]
     eq(base, 4_875_891_429, "базовая премия, сум", 2)
     eq(with_fr, 598_418_155, "премия с франшизой 90% и франшизой по риску, сум", 2)
-    assert "исключить риск землетрясения" in " ".join(r["basis"])
+    if M.legacy():
+        assert "исключить риск землетрясения" in " ".join(r["basis"])
     assert any(a["code"] == "sum_to_value" and "ст. 936" in (a.get("legal_ref") or "")
                for a in r["alternatives"]), r["alternatives"]
 
@@ -384,21 +425,14 @@ def test_thresholds_in_db():
             r2 = fr.recommend_franchise(con, dict(EX_B1[0], construction="wood"),
                                         dict(EX_B1[1], protection="none"),
                                         market=MARKET, as_of=AS_OF)
-            assert "dominant_peril" in r2["grounds"], r2["grounds_checked"]
+            assert ("dominant_peril" in r2["grounds"]) == M.want(NEW, "dominant after 0,30", True), r2["grounds_checked"]
             print(f"  ok  порог доминирования 0,30 → основания {r2['grounds']}")
 
 
 def main():
-    test_a_low_no_franchise()
-    test_a_client_request()
-    test_b1_no_grounds()
-    test_b2_client_request()
-    test_c_critical()
-    test_d_dominant_peril_only()
-    test_e_small_losses_only()
-    test_f_statutory()
-    test_g_cap_warning()
-    test_thresholds_in_db()
+    M.run_both([test_a_low_no_franchise, test_a_client_request, test_b1_no_grounds, test_b2_client_request,
+                test_c_critical, test_d_dominant_peril_only, test_e_small_losses_only, test_f_statutory,
+                test_g_cap_warning, test_thresholds_in_db], "франшиза:")
     print("\nВсе примеры сошлись.")
 
 

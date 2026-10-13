@@ -920,7 +920,8 @@ def _default_activity(con, cls: str, product_code: Optional[str], otype: Optiona
 
 def ra_context(con, *, cls: str, product_code: Optional[str], otype: Optional[str], group: str,
                kind: Optional[str], S: float, V: float, region: str, term_days: Optional[int],
-               year: Optional[int], o: dict, recognized: list, text: str = "") -> dict:
+               year: Optional[int], o: dict, recognized: list, text: str = "",
+               facts_optional: Optional[tuple] = None) -> dict:
     """
     Те же входные данные, что у акта, в форме risk_analytics. Чего нет — подставляет
     ra.apply_defaults (быстрый режим), каждая подстановка — в assumptions с пометкой «по умолчанию».
@@ -987,6 +988,12 @@ def ra_context(con, *, cls: str, product_code: Optional[str], otype: Optional[st
         if act:
             must["activity"] = act
     optional = {}
+    # факты об объекте акта (act_pkg/facts.ra_optional → (поля, источники)): износ, этажность, площадь, у класса 3 —
+    # наработка, площадка, охрана, оператор, водители — из того же словаря, что раздел 1 и факторы акта
+    f_vals, f_src = facts_optional or ({}, {})
+    for key, v in f_vals.items():
+        optional[key] = v
+        sources[key] = f_src.get(key) or "input"
     if o.get("protection"):
         optional["protection"] = o["protection"]
         sources["protection"] = "input"
@@ -1032,9 +1039,10 @@ def ra_context(con, *, cls: str, product_code: Optional[str], otype: Optional[st
 #   PML — вероятный максимальный убыток, защита сработала штатно (наименьший);
 #   EML — оценочный максимальный убыток, защита сработала частично; с ним сравнивается удержание;
 #   MFL — максимально возможный убыток при отказе защиты или катастрофе.
-# В risk_analytics названия переставлены (там EML — «защита сработала», PML — «сработала частично»),
-# сам модуль не меняется — сопоставление только здесь: сценарий акта ← сценарий модуля.
-ACT_FROM_RA = {"PML": "EML", "EML": "PML", "MFL": "MFL"}
+# До 13.10.2026 в risk_analytics названия были переставлены (EML — «защита сработала», PML — «частично») и здесь
+# стояло сопоставление PML ← EML, EML ← PML. По задаче 4.1 ТЗ 13.10.2026 модуль переименован, порядок совпадает
+# с актом — сопоставление тождественное (оставлено, чтобы старые вызовы работали без правок).
+ACT_FROM_RA = {"PML": "PML", "EML": "EML", "MFL": "MFL"}
 SCENARIO_ORDER = "classic"               # метка сопоставления в сохранённом акте (старые акты — без неё)
 
 
@@ -1431,6 +1439,11 @@ def franchise(con, ctx: dict, fr: dict, rate_res: dict, *, cls: str, S: float, l
       applied — сотрудник применил свою франшизу (optional.deductible): премия акта пересчитана;
       statutory — обязательный вид: франшиза не применяется, запрос сотрудника (если был) не исполнен.
     """
+    from . import act_engine as ae_
+    if ae_.model_on(rate_res) and (rate_res.get("rate_model") or {}).get("available"):
+        # модель ставки (задача 4.1): основания — только ≥ 2 мелких убытка или просьба клиента; уровень — из K_об
+        fr = ae_.franchise_model(fr, rate_res, th, cls, S)
+        level = rate_res["rate_model"]["risk_level"]
     out = dict(fr)
     P = rate_res.get("premium")
     out.update(status="none", applied=False, applied_by=None, type=None, size_pct=0.0, size_amount=0,

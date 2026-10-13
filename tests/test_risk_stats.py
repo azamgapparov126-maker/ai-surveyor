@@ -34,7 +34,7 @@
   пример 1 (склад, класс 9): все прежние составляющие 0 баллов, сейсмика не применяется;
     внешняя статистика 65 × 0,10 / 0,90 = 7,2 → «Низкий» (было 0,0 → «Низкий»); премия 6 048 000 та же
   пример 2 (производство 8/9, г. Ташкент): внешняя статистика = среднее (0; 50; 50) = 33,3;
-    балл = (57,8 × 1,0 + 33,3 × 0,10) / 1,10 ≈ 55,6 → «Повышенный» (было 57,8); премия 612 927 966 та же
+    балл = (57,8 × 1,0 + 33,3 × 0,10) / 1,10 ≈ 55,6 → «Повышенный» (было 57,8); премия — по модели ставки ТЗ 13.10.2026
 """
 import statistics
 import sys
@@ -257,8 +257,9 @@ def test_analysis_premium_unchanged():
             T.fix_company(con)
             r = ra.analyze(con, *T.EX1, thresholds={}, market={"rate_pct": 0.18}, as_of=AS_OF)
             r0 = ra.analyze(con, *T.EX1, thresholds=T.NO_EXT, market={"rate_pct": 0.18}, as_of=AS_OF)
-            check("склад: премия", r["summary"]["premium"], 6_048_000)
-            check("склад: EML / PML / MFL", [r["scenarios"][s]["amount"] for s in ("EML", "PML", "MFL")],
+            # эталон ТЗ 13.10.2026 (модель ставки; было 6 048 000); сценарии названы как в акте (PML ≤ EML ≤ MFL)
+            check("склад: премия", r["summary"]["premium"], 3_620_694)
+            check("склад: PML / EML / MFL", [r["scenarios"][s]["amount"] for s in ("PML", "EML", "MFL")],
                   [336_000_000, 840_000_000, 1_680_000_000])
             ext = r["external_stats"]
             check("склад: внешняя статистика применима", ext["applicable"], True)
@@ -274,11 +275,11 @@ def test_analysis_premium_unchanged():
 
             r = ra.analyze(con, *T.EX2, thresholds={}, market={"rate_pct": 0.18}, as_of=AS_OF)
             r0 = ra.analyze(con, *T.EX2, thresholds=T.NO_EXT, market={"rate_pct": 0.18}, as_of=AS_OF)
-            check("производство: премия", r["summary"]["premium"], 612_927_966)
-            check("производство: EML / PML / MFL",
-                  [r["scenarios"][s]["amount"] for s in ("EML", "PML", "MFL")],
+            check("производство: премия", r["summary"]["premium"], 94_604_500)     # было 612 927 966
+            check("производство: PML / EML / MFL",
+                  [r["scenarios"][s]["amount"] for s in ("PML", "EML", "MFL")],
                   [11_600_000_000, 20_300_000_000, 34_000_000_000])
-            check("производство: без составляющей балл 57,8", r0["level"]["score"], 57.8, 0.15)
+            check("производство: без составляющей балл 48 (модель ставки; было 57,8)", r0["level"]["score"], 48.0, 0.15)
             ext = r["external_stats"]
             check("производство: показатели обоих классов (жильё, преступления, кражи)",
                   sorted(i["id"] for i in ext["indicators"] if i["used_in_score"]),

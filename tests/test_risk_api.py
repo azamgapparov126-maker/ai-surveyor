@@ -9,8 +9,9 @@
 
 Контрольные числа:
   склад, класс 9, 4,2 млрд, кирпич, сигнализация и охрана, убытков не было (как пример 1 актуария,
-  tests/test_risk_analytics.py): нетто 0,10 × 0,9 = 0,09%; техническая 0,09 × 1,12 / 0,7 = 0,144%;
-  премия 0,144% × 4 200 000 000 = 6 048 000 сум — рынок и лимит на премию не влияют.
+  tests/test_risk_analytics.py), эталон ТЗ 13.10.2026 (модель ставки): r_рын НАПП 0,022356 % × 1,10 / 0,271 ×
+  K_кл 0,95 = 0,0862 %, премия 3 620 694 сум; прежний путь (rate_model.enabled = false): нетто 0,10 × 0,9 = 0,09%;
+  техническая 0,09 × 1,12 / 0,7 = 0,144%; премия 0,144% × 4 200 000 000 = 6 048 000 сум.
   ОСГОР: ФОТ 4 800 000 000, ОКЭД 01000 (КСТ 4,000), год: 4 800 000 000 × 0,1 × 4 / 100 = 19 200 000 сум.
   Минимум: ФОТ 30 000 000, ОКЭД 41100 (КСТ 0,571) = 17 130 < 0,25 × 412 000 = 103 000 → 103 000 сум.
 """
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 os.environ.pop("SURVEYOR_DEV", None)     # guard проверяем целиком
 
 from tmpdb import temp_db            # noqa: E402
+import rm_modes                      # noqa: E402
 from app import auth, db             # noqa: E402
 from app.main import app             # noqa: E402
 
@@ -147,14 +149,16 @@ def check_analyze():
     cold = (time.perf_counter() - t0) * 1000
     ok("склад → 200", st == 200, (st, str(r)[:300]))
     s = r["summary"]
-    ok("премия 6 048 000 (как у актуария)", abs(s["premium"] - 6_048_000) <= 1, s["premium"])
-    ok("ставка применённая 0,144%", abs(s["rate_applied_pct"] - 0.144) < 1e-6, s["rate_applied_pct"])
+    # эталон ТЗ 13.10.2026; было 6 048 000 и 0,144 % — проверяется ниже прежним путём (переключатель)
+    ok("премия 3 620 694 (модель ставки)", abs(s["premium"] - 3_620_694) <= 1, s["premium"])
+    ok("ставка применённая 0,0862%", abs(s["rate_applied_pct"] - 0.0862) < 1e-6, s["rate_applied_pct"])
     for k in ("completeness", "risks", "top_drivers", "reducers", "scenarios", "retention", "level",
               "market", "market_compare", "method"):
         ok(f"в ответе есть {k}", k in r)
-    ok("сценарии EML/PML/MFL", set(r["scenarios"]) == {"EML", "PML", "MFL"})
-    ok("EML 336 000 000 (как у актуария)", r["scenarios"]["EML"]["amount"] == 336_000_000,
-       r["scenarios"]["EML"]["amount"])
+    ok("сценарии PML/EML/MFL", set(r["scenarios"]) == {"EML", "PML", "MFL"})
+    # названия как в акте (13.10.2026): PML — защита сработала штатно (было «EML 336 000 000»)
+    ok("PML 336 000 000 (как у актуария)", r["scenarios"]["PML"]["amount"] == 336_000_000,
+       r["scenarios"]["PML"]["amount"])
     m = r["market"]
     ok("market — картина рынка: market/region/sources/notes",
        all(k in m for k in ("market", "region", "sources", "notes")), list(m))
@@ -169,6 +173,12 @@ def check_analyze():
     ok("summary.premium = премия /calculate", st == 200 and abs(c["premium"] - s["premium"]) <= 1,
        (st, c.get("premium") if isinstance(c, dict) else c))
 
+    rm_modes.set_mode("legacy")
+    st, rl = call("POST", "/analytics/risk", WAREHOUSE, who=EMP)
+    ok("прежний путь (rate_model.enabled = false): премия 6 048 000, ставка 0,144%",
+       abs(rl["summary"]["premium"] - 6_048_000) <= 1 and abs(rl["summary"]["rate_applied_pct"] - 0.144) < 1e-6,
+       rl["summary"]["premium"])
+    rm_modes.set_mode("model")
     t0 = time.perf_counter()
     st, r2 = call("POST", "/analytics/risk", WAREHOUSE, who=EMP)
     warm = (time.perf_counter() - t0) * 1000

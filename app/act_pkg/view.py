@@ -13,7 +13,7 @@ from .. import uzex_sources as us
 
 from .recognize import recognized_view
 from .regions import region_label
-from .view_fmt import _ddmmyyyy, money_k, _money_na, _pct_na
+from .view_fmt import _ddmmyyyy, money_k, _money_na, _mult, _pct_na
 from .documents import _cr_value, cross_view, _risk_view, _x_value
 from .view_rows import (_check_text, _class_label, _disc_text, _doc_kind_label, _object_rows, _row, _rq_params,
     _s1_label, _text)
@@ -132,12 +132,19 @@ def render(D: dict, lang: str, meta: dict) -> dict:
                       "scoring_png": f"/act/{meta['id']}/scoring.png?lang={lang}"},
         # отчёт кредитного бюро по заёмщику (01.10.2026); нет отчёта — available = false
         "borrower": v4.bv["json"],
-        # вилка ставки (01.10.2026): отметки, поправки региона и рынка с источниками, вывод одной фразой
+        # вилка ставки (01.10.2026): отметки, поправки региона и рынка с источниками, вывод одной фразой; у модели
+        # ставки (ТЗ 13.10.2026) вилка — только в how_computed («Как посчитано»), в сводке её нет
         "rate_fork": dict(v4.FV["json"], overview=v4.FV.get("overview")),
         # факторы объекта по подгруппам класса (02.10.2026): множитель, применённые и незаполненные группы, вклад
         # каждого фактора в сумах, строки пояснения на языке акта; экспертно, calibrated = 0
         "factor_adjustment": v4.FAV["json"],
+        # факты об объекте (13.10.2026): тот же словарь, что получили факторы и аналитика; у старых актов — None
+        "object": D.get("object"),
     }
+    if ae.model_on(rate_res):
+        # модель ставки (задача 4.1): в сводке одна ставка (rate.applied_pct) и rate_trace; вилка, базовая ставка,
+        # поправки и прочие ставки — под ключом how_computed
+        out["how_computed"] = dict(out["rate"].pop("how_computed", {}), rate_fork=out.pop("rate_fork"))
     # страховой скоринг объекта (01.10.2026): представление посчитанного акта; сбой показа не роняет акт
     try:
         out["scoring"] = asc.view(D, out, lang, meta, borrower=v4.bv["scoring"])
@@ -167,10 +174,42 @@ def _damages_json(damages: list, lang: str) -> dict:
             "calibrated": ae.CALIBRATED}
 
 
+def _rate_model_json(D: dict, lang: str, mode: str, pf: dict) -> dict:
+    """Блок rate у модели ставки (ТЗ 13.10.2026, задачи 4.1–4.2): одна ставка, rate_trace, пояснение, рыночная
+    ставка строкой для сравнения; базовая ставка, поправки и шаги — в how_computed."""
+    rate_res = D["rate"]
+    res = rate_res.get("rate_model") or {}
+    ex = tx.rate_explain(res, lang, (rate_res.get("rm_st") or {}).get("rate_model", {}).get("explain"))
+    mk = res.get("market") or {}
+    market_line = t("rm_market_line", lang, m=pct(mk["market_rate_pct"], lang)) \
+        if mk.get("market_rate_pct") is not None else t("rm_market_none", lang)
+    return {"mode": mode, "model": "rate_model", "applied_pct": rate_res["applied_pct"],
+            "applied_exact_pct": rate_res.get("applied_exact_pct"), "final_pct": pf["rate_pct"],
+            "min_pct": rate_res["min_pct"], "min_applied": rate_res["min_applied"],
+            "min_source": _min_src_text(D, lang), "risk_level": res.get("risk_level"),
+            "premium": rate_res["premium"], "rate_type": rate_res.get("rate_type") or "annual",
+            "rate_type_label": t("rate_type_" + (rate_res.get("rate_type") or "annual"), lang),
+            "annual_equiv_pct": rate_res.get("annual_equiv_pct"), "refer": rate_res.get("refer") or [],
+            "rate_trace": rate_res.get("rate_trace") or [], "explain": ex, "market_compare": market_line,
+            "version": res.get("version"), "version_date": res.get("date"), "calibrated": ae.CALIBRATED,
+            "class_code": rate_res["class_code"], "product_code": rate_res["product_code"],
+            "tariff_version_id": D.get("tariff_version_id"),
+            "how_computed": {"how": [_text(h, lang) for h in rate_res["how"]], "base_pct": rate_res["base_pct"],
+                             "base_source": rate_res["base_source"], "calc_pct": rate_res["calc_pct"],
+                             "r_net": res.get("r_net"), "r_tech": res.get("r_gross"), "r_market": res.get("r_market"),
+                             "r_exp": res.get("r_exp"), "Z": res.get("Z"), "theta": res.get("theta"),
+                             "c": res.get("c"), "L": res.get("L"), "k_object": res.get("k_object"),
+                             "k_region": res.get("k_region"), "k_client": res.get("k_client"),
+                             "cap_pct": res.get("cap_pct"), "factors": res.get("factors") or [],
+                             "market_rate_pct": mk.get("market_rate_pct")}}
+
+
 def _rate_json(D: dict, lang: str, PV: Optional[dict], mode: str, pf: dict) -> dict:
     """Блок rate ответа: ставки расчёта, источник, тип ставки, вилка и факторы в режиме apply."""
     rate_res = D["rate"]
     must = D["must"]
+    if ae.model_on(rate_res) and not PV:
+        return _rate_model_json(D, lang, mode, pf)
     return {"mode": mode, "base_pct": rate_res["base_pct"], "adj_pct": rate_res["adj_pct"],
             "calc_pct": rate_res["calc_pct"], "applied_pct": rate_res["applied_pct"],
             "min_pct": rate_res["min_pct"], "min_applied": rate_res["min_applied"],
@@ -344,13 +383,18 @@ def _render_s4(D: dict, lang: str, PV: Optional[dict], OV: Optional[dict]) -> Si
     minus = lambda x: (str(x) if lang == "en" else str(x).replace(".", ",")).replace("-", "−")
     rule_text = t("level_rule", lang, net=minus(risk["net"]), low=minus(rule["low_max_net"]),
                   high=minus(rule["high_min_net"]), k=rule["min_known"])
+    model = ae.model_on(rate_res) or risk.get("basis") == "k_object"
+    if model and risk.get("k_object") is not None:
+        rl = (((rate_res.get("rm_st") or {}).get("rate_model")) or ae.rm.DEFAULTS)["risk_level"]
+        rule_text = t("level_rule_k", lang, k=_mult(risk["k_object"], lang), low=_mult(rl["low_max"], lang),
+                      high=_mult(rl["high_min"], lang))
     mode = rate_res["mode"]
     pf = _premium_final(D)
     rows4 = _s4_rate_rows(D, lang, PV, OV, level_label, pf)
     # вилка ставки (01.10.2026): минимум → ставка акта → с учётом региона и рынка → рынок; у частей — по каждой части
     FV = _fork_parts_view(D, PV, lang) if PV and D.get("rate_fork") else \
         _fork_view(D.get("rate_fork"), lang, must["class_code"])
-    if not PV and FV.get("row") and mode == "tariff":
+    if not PV and FV.get("row") and mode == "tariff" and not ae.model_on(rate_res):
         rows4.append(FV["row"])
     # факторы объекта по подгруппам класса (02.10.2026): строка (у частей — по строке на часть) и перечень ниже
     FAV = _factor_view(D, lang)
@@ -384,7 +428,7 @@ def _render_s4(D: dict, lang: str, PV: Optional[dict], OV: Optional[dict]) -> Si
             anv = {"summary": None, "lists": [], "json": {"available": False, "reason": "render_error",
                                                           "calibrated": ae.CALIBRATED}}
     lists4 += lists_obj4                     # парк ТС: ставка и премия по каждому объекту
-    if FV.get("list"):
+    if FV.get("list") and not ae.model_on(rate_res):
         lists4.append(FV["list"])            # «Вилка ставки» — сразу после «Как посчитан тариф»
     if FAV["lines"]:
         # «Факторы объекта по подгруппам класса» — после вилки: построчно, вклад каждого фактора в сумах
@@ -448,6 +492,29 @@ def _s4_rate_rows(D: dict, lang: str, PV: Optional[dict], OV: Optional[dict], le
         # парк ТС: ставка — по каждому объекту (таблица ниже), у договора — средняя справочно и сумма премий
         rows4 = [_row(t("level", lang), level_label, t("obj_level_note", lang, n=D["objects_total"]["worst_index"]))]
         rows4 += OV["s4_rows"]
+    elif mode == "tariff" and ae.model_on(rate_res):
+        # модель ставки (ТЗ 13.10.2026): одна ставка, пояснение до 3 строк, рынок — строкой для сравнения
+        res = rate_res.get("rate_model") or {}
+        ex = tx.rate_explain(res, lang, (rate_res.get("rm_st") or {}).get("rate_model", {}).get("explain"))
+        mk = res.get("market") or {}
+        rows4 += [_row(t("applied_rate", lang), pct(rate_res["applied_pct"], lang),
+                       t("min_applied", lang) if rate_res["min_applied"] else None)]
+        if ex.get("text"):
+            rows4.append(_row(t("rm_explain_title", lang), ex["text"]))
+        if rate_res.get("rate_type") == "fixed":
+            rows4 += [_row(t("rate_type_row", lang), t("rate_type_fixed", lang)),
+                      _row(t("rate_annual_equiv_row", lang), pct(rate_res.get("annual_equiv_pct"), lang),
+                           f"{pct(rate_res['applied_pct'], lang)} × 365 / {rate_res['term_days']}")]
+        if pf["franchise_applied"]:
+            rows4.append(_row(t("rate_with_fr", lang), pct(pf["rate_pct"], lang),
+                              t("min_applied", lang) if fr.get("floor_applied") else None))
+        prem_note = t("premium_term", lang, days=rate_res["term_days"])
+        if pf["franchise_applied"]:
+            prem_note += "; " + t("premium_no_fr", lang, before=money(rate_res["premium"], lang))
+        rows4 += [_row(t("min_rate", lang), _pct_na(rate_res["min_pct"], lang), _min_src_text(D, lang)),
+                  _row(t("rm_market_title", lang), t("rm_market_line", lang, m=pct(mk["market_rate_pct"], lang))
+                       if mk.get("market_rate_pct") is not None else t("rm_market_none", lang)),
+                  _row(t("premium", lang), money(pf["amount"], lang), prem_note)]
     elif mode == "tariff":
         rows4 += [_row(t("applied_rate", lang), pct(rate_res["applied_pct"], lang),
                        t("min_applied", lang) if rate_res["min_applied"] else None)]

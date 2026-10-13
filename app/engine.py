@@ -16,6 +16,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from . import rate_model as rm
+
 RISK_LOAD = 0.12          # рисковая надбавка до калибровки (γ ≈ 0,95)
 CAT_PERILS = {"earthquake", "mudflow", "landslide"}
 # Исторический набор факторов класса 8. Движок им больше не ограничен: факторы берутся
@@ -48,6 +50,10 @@ class Reference:
     market: dict = field(default_factory=dict)     # class_code -> {"rate_pct","loss_ratio","label","row"} из отчётов НАПП
     class_factors: dict = field(default_factory=dict)  # class_code -> [factor_code, ...] — факторы класса из справочника
     products: dict = field(default_factory=dict)       # product_code -> {"name","pricing_mode"}
+    # модель ставки ТЗ 13.10.2026 (app/rate_model.py): {класс: {"market": r_рын НАПП, "experience": опыт INSON}}
+    # и настройки {"rate_model", "load"} из act_settings; пусто — значения по умолчанию, рынка и опыта нет
+    rate_inputs: dict = field(default_factory=dict)
+    rate_settings: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -72,6 +78,8 @@ class Input:
     valuation: Optional[dict] = None                  # последняя оценка стоимости по объекту:
     # {"id","value","method","method_version","as_of","confirmed_by","region"} — из app/valuation.py.
     # None = оценки по объекту нет, проверка не выполняется и расчёт идёт как раньше.
+    losses_count: Optional[int] = None                # убытков за 3 года (K_кл модели ставки); None — из loss_history
+    seismic_zone: Optional[int] = None                # сейсмозона, баллов (c модели ставки); None — из фактора seismic
 
 
 def _perils_of_class(ref: Reference, class_code: str) -> dict:
@@ -102,8 +110,85 @@ def factors_for(ref: Reference, inp: Input) -> list:
     return list(inp.factors)
 
 
+def model_enabled(ref: Reference) -> bool:
+    """Модель ставки ТЗ 13.10.2026 включена (act_settings.rate_model.enabled, по умолчанию да)."""
+    return rm.enabled(ref.rate_settings)
+
+
+LOSS_OPTION_COUNT = {"clean": 0, "one": 1, "many": 2}     # варианты coefficients.loss_history → число убытков
+SEISMIC_OPTION_ZONE = {"z7": 7, "z8": 8, "z9": 9}         # варианты coefficients.seismic → баллы
+
+
 def rate_for(ref: Reference, inp: Input) -> dict:
-    """Техническая ставка с построчным объяснением."""
+    """Техническая ставка с построчным объяснением. Включена модель ставки (rate_model) — ставка по разделу 3
+    ТЗ 13.10.2026 (_rate_for_model), иначе — прежняя схема «база × доля рисков × коэффициенты + надбавки ÷ (1 − L)»."""
+    if model_enabled(ref):
+        return _rate_for_model(ref, inp)
+    return rate_for_legacy(ref, inp)
+
+
+def _rate_for_model(ref: Reference, inp: Input) -> dict:
+    """
+    Ставка калькулятора по модели ставки (app/rate_model.compute): r_нетто = Z·r_опыт + (1 − Z)·r_рын (НАПП) ×
+    доля включённых рисков; r_брутто = r_нетто·(1 + θ + c)/(1 − L); × K_об (коэффициенты класса без убытков и
+    сейсмозоны) × K_рег × K_кл; clip(r_нетто; 3 × тариф). gross_pct — расчётная ставка до минимума продукта
+    (минимум применяет calculate). Ключи ответа — как у прежней схемы, плюс rate_model (все шаги и источники).
+    """
+    base = ref.base_rates.get((inp.class_code, inp.object_type))
+    if base is None:
+        same = [v for (c, _), v in ref.base_rates.items() if c == inp.class_code]
+        base = sum(same) / len(same) if same else None
+    perils = _perils_of_class(ref, inp.class_code)
+    included = set(inp.perils_included) if inp.perils_included is not None         else {c for c in perils if c != "nuclear"}
+    excluded = [perils[c]["name"] for c in perils if c not in included]
+    if perils:
+        total = sum(p["share"] for p in perils.values()) or 1.0
+        share = sum(p["share"] for c, p in perils.items() if c in included) / total
+        quake = any(c in included for c in CAT_PERILS)
+    else:
+        share, quake = 1.0, True
+    mr = min_rate(ref, inp.product_code, inp.payer_type)
+    negotiated = pricing_mode_of(ref, inp) in NEGOTIATED_MODES
+    tariff = None if negotiated else mr["company"]
+    floor = None if negotiated else mr["floor"]
+    data = ref.rate_inputs.get(inp.class_code) or {}
+    losses = inp.losses_count if inp.losses_count is not None         else LOSS_OPTION_COUNT.get(inp.factors.get("loss_history"))
+    zone = inp.seismic_zone if inp.seismic_zone is not None         else SEISMIC_OPTION_ZONE.get(inp.factors.get("seismic"))
+    facs = rm.engine_k_object(ref.coefficients, inp.factors, factors_for(ref, inp), ref.rate_settings)
+    res = rm.compute({"class_code": inp.class_code, "sum_insured": inp.sum_insured, "term_days": inp.term_days,
+                      "experience": data.get("experience"), "market": data.get("market"),
+                      "tariff_pct": tariff, "min_pct": floor, "base_net_pct": base,
+                      "peril_share": max(share, 0.001), "quake_covered": quake, "seismic_zone": zone,
+                      "k_object_factors": facs, "losses_count": losses}, ref.rate_settings)
+    if not res.get("available"):
+        # ни рынка, ни тарифа, ни базовой ставки — прежняя схема (запасная базовая ставка движка)
+        out = rate_for_legacy(ref, inp)
+        out["rate_model"] = res
+        return out
+    net = res["r_net"]
+    chain = [{"name": "Нетто-ставка: Z · опыт INSON + (1 − Z) · рынок НАПП"
+              if res["r_market_kind"] == "market" else "Нетто-ставка: тариф INSON × (1 − L) (временно)"
+              if res["r_market_kind"] == "tariff" else "Нетто-ставка: базовая ставка справочника (экспертно)",
+              "value_pct": round(net, 4)}]
+    if perils:
+        chain.append({"name": "Набор рисков", "mult": round(share, 3), "excluded": excluded})
+    chain.append({"name": f"Рисковая надбавка θ {res['theta']:g}", "add_pct": round(net * res["theta"], 4)})
+    if res["c"]:
+        chain.append({"name": f"Катастрофическая надбавка c {res['c']:g}", "add_pct": round(net * res["c"], 4)})
+    chain.append({"name": f"Нагрузка L {res['L']:g}", "divide_by": round(1 - res["L"], 3)})
+    for f in res["factors"]:
+        # факторы объекта — все (и с множителем 1: видно, что учтено); K_рег, K_кл и границы — если не 1
+        if f["kind"] == "object" or abs(f["coef"] - 1) > 1e-12:
+            chain.append({"name": f["label"] or {"k_region": "K_рег", "k_client": "K_кл",
+                                                 "k_object_bound": "Границы K_об"}.get(f["code"], f["code"]),
+                          "mult": f["coef"], "applies": True})
+    return {"base_pct": net / share if share else net, "share": share, "net_pct": net,
+            "risk_pct": net * res["theta"], "cat_pct": net * res["c"], "gross_pct": res["r_calc"],
+            "included": sorted(included), "chain": chain, "rate_model": res}
+
+
+def rate_for_legacy(ref: Reference, inp: Input) -> dict:
+    """Прежняя техническая ставка (до модели ТЗ 13.10.2026) с построчным объяснением."""
     base = ref.base_rates.get((inp.class_code, inp.object_type))
     if base is None:
         # нет базовой ставки для типа объекта — берём среднюю по классу

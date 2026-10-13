@@ -1471,3 +1471,71 @@ CREATE TABLE IF NOT EXISTS company_rankings (
     PRIMARY KEY (report_period, indicator_code, company)
 );
 CREATE INDEX IF NOT EXISTS ix_company_rankings_company ON company_rankings(company, report_period);
+
+-- ---------------------------------------------------------------------------
+-- Части продуктов (ТЗ разработчику 13.10.2026, день 2.1; app/product_parts.py). Строка — часть продукта в своём
+-- классе для типа клиента (fiz | yur | both): своя базовая и минимальная ставка, тип ставки, база суммы, доля, лимит,
+-- франшиза. Версия — как у tariff_versions: valid_from + source + created_at; новая правка — новая версия тарифа
+-- (tariff_versions, уровень «компания») и строка product_part_versions, старые не меняются (правило проекта № 9).
+-- Строки тарифной политики (source = policy, tools/product_parts_migrate.py) ссылаются на версию политики.
+-- «limit» и «order» — служебные слова SQL, поэтому колонки limit_amount и sort_order.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS product_part_versions (
+    tariff_version_id INTEGER PRIMARY KEY REFERENCES tariff_versions(id),
+    product_code      TEXT NOT NULL,
+    valid_from        TEXT NOT NULL,
+    source            TEXT NOT NULL,                    -- admin | import | tz_example
+    created_at        TEXT NOT NULL,
+    created_by        TEXT,
+    note              TEXT
+);
+CREATE TABLE IF NOT EXISTS product_parts (
+    id                INTEGER PRIMARY KEY,
+    tariff_version_id INTEGER NOT NULL REFERENCES tariff_versions(id),
+    product_code      TEXT NOT NULL REFERENCES products(code),
+    part_no           INTEGER NOT NULL,
+    class_code        TEXT NOT NULL REFERENCES classes(code),
+    perils            TEXT NOT NULL DEFAULT '[]',       -- JSON: коды рисков части
+    client_type       TEXT NOT NULL DEFAULT 'both',     -- fiz | yur | both
+    base_rate_pct     REAL,                             -- NULL — ставки части нет, расчёт прежним путём
+    min_rate_pct      REAL,
+    rate_type         TEXT NOT NULL DEFAULT 'annual',   -- annual | fixed
+    sum_basis         TEXT NOT NULL DEFAULT 'value',    -- value | limit | share
+    default_share     REAL,                             -- доля страховой суммы договора, 0..1; NULL — не задана
+    limit_amount      REAL,                             -- лимит части, сум
+    deductible        REAL,                             -- франшиза части, % страховой суммы
+    mandatory         INTEGER NOT NULL DEFAULT 1,
+    sort_order        INTEGER NOT NULL DEFAULT 1,
+    valid_from        TEXT NOT NULL,
+    rules_ref         TEXT,
+    source            TEXT NOT NULL,                    -- policy | tz_example | admin | import
+    created_at        TEXT NOT NULL,
+    created_by        TEXT,
+    note              TEXT,
+    UNIQUE (tariff_version_id, product_code, part_no, client_type)
+);
+CREATE INDEX IF NOT EXISTS ix_product_parts_product ON product_parts(product_code, valid_from);
+
+-- ---------------------------------------------------------------------------
+-- Актуарный отчёт по субпортфелям (ТЗ 13.10.2026, день 2.3; app/actuarial.py, загрузка — tools/actuarial_load.py).
+-- Суммы — млн сум, брутто. load_L — доля расходов на ведение дела в заработанной премии (0..1).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS actuarial_reports (
+    year            INTEGER NOT NULL,
+    subportfolio    TEXT NOT NULL,          -- vehicle | aviation | property | liability | financial | osgovts | osgor | other
+    name            TEXT NOT NULL,          -- как в отчёте
+    premium_written REAL,
+    premium_earned  REAL NOT NULL,
+    payouts         REAL NOT NULL DEFAULT 0,
+    expenses        REAL,                   -- расходы на ведение дела
+    expenses_pct    REAL,                   -- к заработанной брутто-премии, %
+    commission_pct  REAL,                   -- агентская комиссия, % премии
+    risk_margin     REAL,                   -- рисковая надбавка в составе нетто-премии; NULL — не оценивалась
+    load_L          REAL,
+    unit            TEXT NOT NULL DEFAULT 'млн сум',
+    pages           TEXT,
+    source          TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    updated_by      TEXT,
+    PRIMARY KEY (year, subportfolio)
+);

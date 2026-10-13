@@ -376,7 +376,31 @@ def current(con, cls: Optional[str]) -> Optional[dict]:
                "updated_by": None, "calibrated": CALIBRATED, "note": None, "pending_file_version": None}
     out["requested_class"] = str(cls)
     out["alias_of"] = b if b != str(cls) else None
+    out["template"] = with_catalog(con, out.get("class_code") or b, out.get("template"))
     return out
+
+
+# Единый справочник факторов (задача 4.1 ТЗ 13.10.2026): группы шаблона (factor_groups) + коэффициенты класса из
+# таблицы coefficients без дублей — rate_model.factor_catalog. Собирается при каждом чтении шаблона и лежит в
+# копии шаблона под этим ключом; в базу шаблонов не пишется (save и правка администратора его отбрасывают).
+CATALOG_KEY = "factor_catalog"
+
+
+def with_catalog(con, cls: str, tpl: Optional[dict]) -> Optional[dict]:
+    """Копия шаблона с единым справочником факторов класса (factor_catalog). Сбой чтения coefficients — без него."""
+    if not isinstance(tpl, dict):
+        return tpl
+    from . import rate_model
+    try:
+        cur = con.execute("SELECT factor_code, factor_name, class_code, option_code, option_name, multiplier, "
+                          "calibrated FROM coefficients WHERE class_code=? ORDER BY id", (str(cls),))
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        st = rate_model.db_settings(con)
+    except Exception:
+        return {k: v for k, v in tpl.items() if k != CATALOG_KEY}
+    groups = factor_groups(tpl)
+    return dict(tpl, **{CATALOG_KEY: rate_model.factor_catalog(groups, rows, str(cls), st)})
 
 
 def all_current(con) -> list:
@@ -422,7 +446,7 @@ def save(con, cls: str, tpl: dict, who: str, note: str = "") -> dict:
     v = bump(cur["version"] if cur else "1.0")
     while con.execute("SELECT 1 FROM class_templates WHERE class_code=? AND version=?", (b, v)).fetchone():
         v = bump(v)
-    tpl = dict(tpl, class_code=b, calibrated=CALIBRATED)
+    tpl = {k: v for k, v in dict(tpl, class_code=b, calibrated=CALIBRATED).items() if k != CATALOG_KEY}
     rid = con.execute("INSERT INTO class_templates (class_code, version, json, source, file_version, updated_at, "
                       "updated_by, calibrated, note) VALUES (?,?,?,?,?,?,?,?,?)",
                       (b, v, json.dumps(tpl, ensure_ascii=False), "admin", (cur or {}).get("file_version"),

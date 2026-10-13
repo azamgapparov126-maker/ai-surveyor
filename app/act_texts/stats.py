@@ -169,6 +169,18 @@ TX_ANALYTICS = {
     "lbl_building_kind": {"ru": "Вид объекта", "uz": "Obyekt turi", "en": "Type of property"},
     "lbl_address": {"ru": "Адрес / место нахождения", "uz": "Manzil / joylashgan joyi", "en": "Address / location"},
     "lbl_floors": {"ru": "Этажность", "uz": "Qavatlar soni", "en": "Number of floors"},
+    # факты об объекте в разделе 1 (13.10.2026, ТЗ день 1): адрес, износ, водители, площадь в м²
+    "lbl_object_address": {"ru": "Адрес объекта", "uz": "Obyekt manzili", "en": "Object address"},
+    "lbl_wear": {"ru": "Износ", "uz": "Eskirish", "en": "Wear"},
+    "lbl_drivers": {"ru": "Водители и стаж", "uz": "Haydovchilar va staji", "en": "Drivers and experience"},
+    "unit_m2": {"ru": "м²", "uz": "m²", "en": "m²"},
+    "s1_wear_new": {"ru": "новое или после капремонта", "uz": "yangi yoki kapital taʼmirdan keyin",
+                    "en": "new or after overhaul"},
+    "s1_wear_normal": {"ru": "до 50 %", "uz": "50 % gacha", "en": "up to 50 %"},
+    "s1_wear_high": {"ru": "более 50 %", "uz": "50 % dan ortiq", "en": "over 50 %"},
+    "s1_wear_emergency": {"ru": "аварийное состояние", "uz": "avariya holati", "en": "dilapidated"},
+    "s1_wear_by_pct": {"ru": "вариант фактора «Износ» — по проценту", "uz": "«Eskirish» omili varianti — foiz boʻyicha",
+                       "en": "«Wear» factor option — from the percentage"},
     "as_activity_by_type": {"ru": "деятельность на объекте: {value} — по типу объекта «{type}», принято по умолчанию",
                             "uz": "obyektdagi faoliyat: {value} — «{type}» obyekt turi boʻyicha, standart boʻyicha "
                                   "qabul qilindi",

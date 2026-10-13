@@ -1,6 +1,11 @@
 """
 Лёгкий движок сюрвейерского акта (ТЗ «Мини-приложение ИИ-сюрвейер. Лёгкая версия», 2.0 от 29.09.2026).
 
+С 13.10.2026 (ТЗ разработчику, задачи 3.1–4.2) ставка акта по умолчанию считается моделью ставки app/rate_model.py
+(раздел 2а ниже): одна ставка, rate_trace, уровень риска из K_об, франшиза — только при ≥ 2 мелких убытках или просьбе
+клиента, вилка — справочно. Пункты 1, 2 (поправка adj_pct) и правило отказа по 4 признакам — прежний путь, он включается
+переключателем act_settings.rate_model.enabled = false для сравнения.
+
 Чистые функции: без сети, без модели и без обращения к базе. Всё нужное приходит аргументами:
 справочник движка (engine.Reference из db.load_reference), настройки акта (act_settings, см. DEFAULT_SETTINGS),
 пороги франшизы (risk_analytics.load_thresholds — только чтение). Тексты по-человечески собирает app/act.py;
@@ -32,7 +37,8 @@ import re
 from datetime import date
 from typing import Optional
 
-from .engine import NEGOTIATED_MODES, STATUTORY_MODE, Input, min_rate, premium_of, rate_for
+from . import rate_model as rm
+from .engine import CAT_PERILS, NEGOTIATED_MODES, STATUTORY_MODE, Input, min_rate, premium_of, rate_for
 
 CALIBRATED = 0
 LEVELS = ("low", "moderate", "high")
@@ -138,6 +144,36 @@ DEFAULT_SETTINGS = {
     #         (ставка акта × множитель, не ниже минимума);
     #         apply — ставка акта = тариф × поправка уровня × множитель, не ниже минимальной; премия — от неё.
     "factors": {"mode": "reference", "min_product": 0.5, "max_product": 2.5, "calibrated": 0},
+    # часы акта (13.10.2026, ТЗ день 1, п. 1.2): дата, время и номер акта — по Ташкенту. utc_offset_hours — запасной
+    # сдвиг, если на машине нет базы часовых поясов (Windows без пакета tzdata); в Узбекистане нет перехода на летнее
+    # время с 1992 года, поэтому постоянный сдвиг совпадает с поясом
+    "clock": {"version": "1.0", "date": "2026-10-13", "tz": "Asia/Tashkent", "utc_offset_hours": 5},
+    # факты об объекте (13.10.2026, ТЗ день 1, п. 1.1): поля «Дополнительно» одним словарём для акта и всех модулей.
+    #   address_max_chars  — длина адреса объекта (optional.address), без персональных данных;
+    #   wear_high_from_pct — износ в процентах, с которого вариант фактора «Износ» — «более 50 %» (high), ниже — «до
+    #                        50 %» (normal); граница — подписи вариантов шаблона класса 8 (factor_groups.wear_level).
+    #                        Вариант по проценту берётся, только если сотрудник не выбрал вариант сам;
+    #   engine_hours_bands — границы наработки спецтехники, моточасов, для фактора engine_hours справочника
+    #                        (до 2 000 — eh_low, до 6 000 — eh_mid, до 12 000 — eh_high, больше — eh_max);
+    #   spec_site_by_location, spec_guard_by_guard, drivers_by_profile — какой вариант справочника факторов класса 3
+    #                        (аналитика раздела 4) соответствует месту работы, охране и водителям акта; места и
+    #                        профиля вне словаря — фактор не задаётся. Экспертно, calibrated = 0
+    "object_facts": {"version": "1.0", "date": "2026-10-13", "address_max_chars": 200, "wear_high_from_pct": 50,
+                     "engine_hours_bands": [2000, 6000, 12000],
+                     "spec_site_by_location": {"construction": "site_build", "closed_storage": "site_wh"},
+                     "spec_guard_by_guard": {"yes": "guard_watch", "no": "guard_none"},
+                     "drivers_by_profile": {"experienced": "limited", "young": "young", "unlimited": "unlimited"},
+                     "calibrated": 0},
+    # тип клиента (13.10.2026, ТЗ день 2, п. 2.3): must.client_type — fiz | yur. Не указан — по словам в названии
+    # продукта (words), иначе default. Управляет строкой тарифа части (product_parts.client_type), полями, оговорками и
+    # мероприятиями: yur_only_* — только у юрлица (ФОТ и оборот, оговорки и мероприятия работодателя); у физлица поле
+    # не принимается, оговорка и мероприятие не выводятся
+    "client_type": {"version": "1.0", "date": "2026-10-13", "default": "yur",
+                    "words": {"fiz": ["физлиц", "физических лиц", "физ. лиц", "jismoniy shaxs"],
+                              "yur": ["юрлиц", "юридических лиц", "юр. лиц", "yuridik shaxs"]},
+                    "yur_only_fields": ["turnover_or_payroll", "employees", "contract_share"],
+                    "yur_only_clauses": ["lb_employer_payroll"],
+                    "yur_only_measures": ["gl_safety"]},
     # пределы загрузки и распознавания (app/act.py): защита сервера, а не тариф
     "limits": {
         "max_image_mp": 50,             # картинка больше стольких мегапикселей отклоняется до раскрытия
@@ -182,6 +218,12 @@ LIMIT_BOUNDS = {"max_image_mp": (1, 200), "pdf_max_pages": (1, 100), "pdf_text_m
 MARKET_BOUNDS = {"min_listings": (1, 20, True), "diff_pct": (1, 100, False), "max_age_months": (1, 24, True),
                  "outlier_low": (0.05, 0.95, False), "outlier_high": (1.05, 20, False)}
 MARKET_FLAGS = ("allow_undated",)       # флаги оценки по объявлениям: только true/false
+
+# модель ставки ТЗ 13.10.2026 (app/rate_model.py, задачи 3.1 и 4.1): rate_model — константы формулы раздела 3 с
+# версией и датой, переключатель enabled (false — прежний путь: тариф × поправка уровня, вилка, правило 4 признаков);
+# load — доля расходов L по субпортфелям (актуарный отчёт 2022, временно). Экспертно, calibrated = 0.
+DEFAULT_SETTINGS.setdefault("rate_model", rm.DEFAULTS)
+DEFAULT_SETTINGS.setdefault("load", rm.LOAD_DEFAULTS)
 
 VIEWS = ("front", "back", "left", "right", "plate", "odometer", "document", "interior", "facade", "roof",
          "electrical", "fire_safety", "general", "installation", "packaging", "marking", "transport", "other")
@@ -658,10 +700,12 @@ def annual_pct(rate_pct: Optional[float], term_days: int, rate_type: str = "annu
 
 def rate(ref, product: Optional[dict], class_code: str, level: str, sum_insured: float,
          term_days: int = 365, object_type: Optional[str] = None, payer_type: Optional[str] = None,
-         settings: Optional[dict] = None, rate_type: str = "annual") -> dict:
+         settings: Optional[dict] = None, rate_type: str = "annual", part: Optional[dict] = None) -> dict:
     """
     rate_type — тип ставки продукта (app/min_rates.py): annual (по умолчанию) | fixed — ставка на весь срок, премия
     = сумма × ставка без деления на срок; годовой эквивалент (× 365 / дни) — в annual_equiv_pct для сравнения с рынком.
+    part — часть продукта, действующая на дату осмотра (app/product_parts.rate_part): базовая ставка, минимум и тип
+    ставки берутся из неё (минимум регулятора по-прежнему действует); None — прежний путь (min_rates).
     product: {"code", "name", "pricing_mode", "rate_text"} или None (выбран только класс).
     Возвращает {"mode": tariff|statutory|undefined, "base_pct", "base_source", "adj_pct", "calc_pct",
                 "applied_pct", "min_pct", "min_applied", "premium", "term_days", "object_type",
@@ -704,8 +748,23 @@ def rate(ref, product: Optional[dict], class_code: str, level: str, sum_insured:
     # ставка: базовая → поправка по уровню → не ниже минимума продукта
     mr = min_rate(ref, code, payer_type) if code else {"floor": None, "company": None}
     floor = mr["floor"]
-    if st["base_source"] == "product_rate" and code and mr.get("company") is not None:
-        base = float(mr["company"])
+    base_company = mr.get("company")
+    if part is not None and code and (part.get("base_rate_pct") is not None or part.get("min_rate_pct") is not None):
+        # часть продукта (product_parts): своя база и свой минимум; минимум регулятора остаётся нижней границей
+        p_min = part.get("min_rate_pct")
+        floor = max([float(x) for x in (p_min, mr.get("regulator")) if x is not None], default=None)
+        base_company = part.get("base_rate_pct") if part.get("base_rate_pct") is not None else p_min
+        if part.get("rate_type") in ("annual", "fixed"):
+            rt = part["rate_type"]
+        out["part"] = {k: part.get(k) for k in ("product_code", "part_no", "class_code", "client_type",
+                                                "base_rate_pct", "min_rate_pct", "rate_type", "tariff_version_id",
+                                                "valid_from", "source")}
+        if part.get("source") != "policy":
+            out["how"].append({"code": "how_part_src", "params": {
+                "code": code, "n": part.get("part_no"), "cls": part.get("class_code"),
+                "base": part.get("base_rate_pct"), "min": p_min, "date": part.get("valid_from")}})
+    if st["base_source"] == "product_rate" and code and base_company is not None:
+        base = float(base_company)
         out["base_source"] = "product_rate"
         out["how"].append({"code": "how_base_product", "params": {"base": base, "code": code}})
     else:
@@ -727,6 +786,11 @@ def rate(ref, product: Optional[dict], class_code: str, level: str, sum_insured:
         else:
             out["how"].append({"code": "how_base_tech_avg", "params": {"base": round(base, 4),
                                                                        "cls": class_code}})
+    if rm.enabled(st):
+        # модель ставки (ТЗ 13.10.2026): без поправки по уровню; тариф продукта — для запасного r_рын и 3 × тарифа
+        return _rate_by_model(ref, out, st, class_code=class_code, base=base, floor=floor,
+                              tariff=base if out["base_source"] == "product_rate" else None,
+                              sum_insured=sum_insured, term_days=term_days, rt=rt, object_type=object_type)
     adj = float((st["adj_pct"] or {}).get(level, 0))
     calc = base * (1 + adj / 100)
     out["base_pct"] = round(base, 4)
@@ -758,6 +822,117 @@ def rate(ref, product: Optional[dict], class_code: str, level: str, sum_insured:
         out["how"].append({"code": "how_premium", "params": {"sum": sum_insured, "rate": out["applied_pct"],
                                                              "days": term_days, "premium": out["premium"]}})
     return out
+
+
+# ------------------------------------------------------------------------------------------------
+#  2а. Модель ставки ТЗ 13.10.2026 в акте (app/rate_model.py)
+# ------------------------------------------------------------------------------------------------
+# Ставка акта собирается по шагам сборки: rate — рынок, опыт, тариф и минимум (K_об = 1, K_кл неизвестен);
+# factor_effect — факторы объекта (единый справочник шаблона и coefficients), убытки клиента и сейсмозона из
+# ввода; каждый шаг пересчитывает rate_model.compute целиком (rm_apply). Вилка ставки в этом режиме — только
+# справочно (how_computed), правило 4 признаков и поправка по уровню в ставке не участвуют, уровень риска — из K_об.
+
+def model_on(rate_res: Optional[dict]) -> bool:
+    """Ставка акта посчитана моделью ставки (rate_model)."""
+    return bool(rate_res) and rate_res.get("model") == "rate_model"
+
+
+def _rate_by_model(ref, out: dict, st: dict, *, class_code: str, base: Optional[float], floor: Optional[float],
+                   tariff: Optional[float], sum_insured: float, term_days: int, rt: str,
+                   object_type: Optional[str]) -> dict:
+    """Ставка акта по модели: входы rate_model.compute (rm_in) и первый пересчёт (rm_apply)."""
+    term = int(term_days or 365)
+
+    def ann(x):
+        return None if x is None else annual_pct(float(x), term, rt)
+    perils = [c for c, p in ref.perils.items() if p["class_code"] == class_code and c != "nuclear"]
+    quake = any(c in CAT_PERILS for c in perils) if perils else True
+    data = (getattr(ref, "rate_inputs", None) or {}).get(str(class_code)) or {}
+    bn = ref.base_rates.get((class_code, object_type or ""))
+    if bn is None:
+        same = [v for (c, _), v in ref.base_rates.items() if c == class_code]
+        bn = sum(same) / len(same) if same else None
+    out["model"] = "rate_model"
+    out["rate_type"] = rt
+    out["base_pct"] = round(base, 4) if base is not None else None
+    out["min_pct"] = floor
+    # настройки модели на дату акта: следующие шаги сборки (factor_effect) пересчитывают с ними же
+    out["rm_st"] = {"rate_model": rm.settings(st), "load": rm.load_settings(st)}
+    out["rm_in"] = {"class_code": str(class_code), "sum_insured": float(sum_insured or 0), "term_days": term,
+                    "as_of": date.today().isoformat(), "experience": data.get("experience"),
+                    "market": data.get("market"), "tariff_pct": ann(tariff), "min_pct": ann(floor),
+                    "base_net_pct": bn, "quake_covered": quake}
+    return rm_apply(out, st)
+
+
+def rm_apply(rate_res: dict, settings: Optional[dict] = None) -> dict:
+    """Пересчёт ставки акта по rate_res["rm_in"]: applied_pct (4 знака, в единицах продукта), премия от
+    неокруглённой ставки, rate_trace, уровень риска из K_об, причины «На рассмотрение», строки «как посчитано»."""
+    res = rm.compute(rate_res["rm_in"], settings if settings is not None else rate_res.get("rm_st"))
+    rate_res["rate_model"] = res
+    rate_res["rate_trace"] = res.get("trace") or []
+    if not res.get("available"):
+        rate_res.update(mode="undefined", applied_pct=None, premium=None, calc_pct=None,
+                        how=[{"code": "how_rm_na", "params": {"cls": rate_res.get("class_code")}}])
+        return rate_res
+    term = int(rate_res.get("term_days") or 365)
+    rt = rate_res.get("rate_type") or "annual"
+    k = term / 365 if rt == "fixed" else 1.0
+    exact = res["r_exact"] * k
+    rate_res.update(mode="tariff", adj_pct=None, calc_pct=round(res["r_calc"] * k, 4), applied_pct=round(exact, 4),
+                    applied_exact_pct=exact, min_applied=bool(res["min_applied"]), premium=res["premium"],
+                    risk_level=res["risk_level"], refer=list(res["refer"]),
+                    annual_equiv_pct=round(res["r_exact"], 4) if rt == "fixed" else None)
+    kind = res.get("r_market_kind")
+    how = [{"code": "how_rm_net_" + (kind if kind in ("market", "tariff", "base") and res["Z"] < 1 else "experience"),
+            "params": {"net": res["r_net"], "z": res["Z"]}},
+           {"code": "how_rm_gross", "params": {"gross": res["r_gross"], "theta": res["theta"], "c": res["c"],
+                                               "L": res["L"]}},
+           {"code": "how_rm_k", "params": {"k_obj": res["k_object"], "k_reg": res["k_region"],
+                                           "k_cl": res["k_client"], "calc": round(res["r_calc"], 6)}}]
+    if res.get("bound") in ("cap", "cap_net"):
+        how.append({"code": "how_rm_cap", "params": {"cap": res["cap_pct"]}})
+    if res.get("bound") == "cap_net":
+        how.append({"code": "how_rm_net_floor", "params": {"net": res["r_net"]}})
+    elif res.get("bound") == "net":
+        how.append({"code": "how_rm_net_floor", "params": {"net": res["r_net"]}})
+    mn = rate_res.get("min_pct")
+    if mn is None:
+        how.append({"code": "how_min_none", "params": {}})
+    elif res["min_applied"]:
+        how.append({"code": "how_min_applied", "params": {"calc": round(res["r_calc"] * k, 4), "min": mn}})
+    else:
+        how.append({"code": "how_min_ok", "params": {"min": mn}})
+    how.append({"code": "how_rm_premium", "params": {"sum": res["sum_insured"], "rate6": round(res["r_exact"], 6),
+                                                     "days": term, "premium": res["premium"]}})
+    # откуда взяты тариф и минимум части продукта (product_parts, день 2) — первой строкой, как у прежнего пути
+    keep = [h for h in rate_res.get("how") or [] if h.get("code") in ("how_part_src",)]
+    if keep:
+        rate_res["rm_keep_how"] = keep
+    rate_res["how"] = list(rate_res.get("rm_keep_how") or []) + how
+    return rate_res
+
+
+def rm_update(rate_res: dict, settings: Optional[dict] = None, **inputs) -> dict:
+    """Новые входы модели (K_об, убытки, сейсмозона) и пересчёт; не модельная ставка — без изменений."""
+    if not model_on(rate_res) or "rm_in" not in rate_res:
+        return rate_res
+    rate_res["rm_in"].update(inputs)
+    return rm_apply(rate_res, settings)
+
+
+def unify_risk(risk: dict, rate_res: Optional[dict]) -> dict:
+    """Один уровень риска акта (задача 4.1): у модельной ставки уровень — из K_об (rate_model.risk_level);
+    признаки правила 4 признаков остаются в risk.factors справочно, в уровень и ставку не входят."""
+    if not model_on(rate_res) or not (rate_res.get("rate_model") or {}).get("available"):
+        return risk
+    rm_res = rate_res["rate_model"]
+    if "level_by_features" not in risk:
+        risk["level_by_features"] = risk.get("level")
+    risk["level"] = rm_res["risk_level"]
+    risk["basis"] = "k_object"
+    risk["k_object"] = rm_res["k_object"]
+    return risk
 
 
 # ================================================================================================
@@ -851,6 +1026,26 @@ def franchise(inputs: dict, level: str, thresholds: dict, statutory: bool = Fals
             "grounds": grounds, "size": size}
 
 
+FR_MODEL_GROUNDS = ("fr_g_small_losses", "fr_g_client")
+
+
+def franchise_model(fr: dict, rate_res: Optional[dict], thresholds: dict, class_code: Optional[str] = None,
+                    sum_insured: float = 0) -> dict:
+    """Модель ставки (задача 4.1): франшиза — только при ≥ 2 мелких убытках или просьбе клиента. Высокий уровень и
+    преобладающий риск оснований больше не дают; размер — вилка уровня из K_об. Иначе — без изменений."""
+    if not model_on(rate_res) or not fr.get("needed"):
+        return fr
+    grounds = [g for g in fr.get("grounds") or [] if g["code"] in FR_MODEL_GROUNDS]
+    if not grounds:
+        return {"needed": False, "code": "fr_not_needed", "grounds": [], "size": None}
+    level = (rate_res.get("rate_model") or {}).get("risk_level") or "moderate"
+    inputs = {"small_count": next((g["params"]["n"] for g in grounds if g["code"] == "fr_g_small_losses"), None),
+              "want_lower_premium": any(g["code"] == "fr_g_client" for g in grounds)}
+    out = franchise(inputs, level, thresholds, False, class_code, sum_insured)
+    out["grounds"] = [g for g in out["grounds"] if g["code"] in FR_MODEL_GROUNDS]
+    return out
+
+
 # ================================================================================================
 #  5. Расхождения
 # ================================================================================================
@@ -932,6 +1127,9 @@ def decision(risk: dict, rate_res: dict, value: dict, fr: dict, disc: list, insp
     (decline_min_up); иначе accept_with_clauses. checks — что проверить андеррайтеру до полиса.
     """
     st = merge_settings(settings)
+    model = model_on(rate_res)
+    if model:
+        unify_risk(risk, rate_res)          # один уровень риска акта — из K_об
     checks = []
     for d in disc:
         checks.append({"code": "c_disc", "params": {"key": d["key"]}})
@@ -960,6 +1158,20 @@ def decision(risk: dict, rate_res: dict, value: dict, fr: dict, disc: list, insp
     if inspection.get("ai") and inspection.get("recognized"):
         checks.append({"code": "c_confirm", "params": {}})
 
+    if model:
+        # модель ставки (ТЗ 13.10.2026): правила 4 признаков нет; нет фото или документов, ≥ 3 убытков за 3 года,
+        # ставка сверх 3 × тарифа — «На рассмотрение» (ставка при этом не меняется)
+        review = not inspection.get("photos") or not inspection.get("documents")
+        for r in rate_res.get("refer") or []:
+            checks.append({"code": "c_rm_refer_" + r["code"], "params": dict(r.get("params") or {})})
+            review = True
+        if review:
+            code = "d_review"
+        elif risk["level"] == "low" and not [c for c in checks if c["code"] != "c_confirm"]:
+            code = "d_accept"
+        else:
+            code = "d_accept_with_clauses"
+        return {"code": code, "checks": checks}
     if risk["up"] >= int(st["decline_min_up"]):
         code = "d_decline"
         checks.append({"code": "c_decline", "params": {}})
@@ -1126,6 +1338,95 @@ def check_settings(s: dict) -> list:
     errs += check_fork_settings((s or {}).get("rate_fork"))
     errs += check_below_min_settings(m.get("below_min"))
     errs += check_factor_settings(m.get("factors"))
+    errs += check_clock_settings(m.get("clock"))
+    errs += check_facts_settings(m.get("object_facts"))
+    errs += check_client_type_settings(m.get("client_type"))
+    errs += rm.check_settings(m)
+    return errs
+
+
+CLIENT_TYPE_KEYS = ("version", "date", "default", "words", "yur_only_fields", "yur_only_clauses", "yur_only_measures")
+
+
+def check_client_type_settings(ct) -> list:
+    """Тип клиента: default — fiz | yur; words — {fiz, yur: [строки]}; yur_only_* — списки кодов."""
+    if not isinstance(ct, dict):
+        return ["client_type: словарь {default, words, yur_only_fields, yur_only_clauses, yur_only_measures}"]
+    errs = []
+    extra = [k for k in ct if k not in CLIENT_TYPE_KEYS]
+    if extra:
+        errs.append("client_type: неизвестные ключи " + ", ".join(extra))
+    if ct.get("default") not in ("fiz", "yur"):
+        errs.append("client_type.default: fiz или yur")
+    w = ct.get("words")
+    if not isinstance(w, dict) or set(w) - {"fiz", "yur"} or any(
+            not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v) for v in w.values()):
+        errs.append("client_type.words: {fiz: [слова], yur: [слова]}")
+    for k in ("yur_only_fields", "yur_only_clauses", "yur_only_measures"):
+        v = ct.get(k)
+        if not isinstance(v, list) or not all(isinstance(x, str) and x for x in v):
+            errs.append(f"client_type.{k}: список кодов")
+    return errs
+
+
+def client_type_rules(settings: Optional[dict]) -> dict:
+    """Правила типа клиента из настроек (merge с умолчаниями)."""
+    return merge_settings(settings)["client_type"] if not (settings or {}).get("client_type") \
+        else settings["client_type"]
+
+
+def client_filter(codes, settings: Optional[dict], client_type: Optional[str], what: str):
+    """Коды оговорок (what = clauses) или мероприятий (measures) без «только у юрлица» — для физлица; None — как есть."""
+    if codes is None or client_type != "fiz":
+        return codes
+    drop = set(client_type_rules(settings).get("yur_only_" + what) or [])
+    return [c for c in codes if c not in drop]
+
+
+def check_clock_settings(ck) -> list:
+    """Часы акта: tz — название пояса, utc_offset_hours — целый сдвиг от −12 до 14, version и date — строки."""
+    if not isinstance(ck, dict):
+        return ["clock: словарь {version, date, tz, utc_offset_hours}"]
+    errs = []
+    extra = [k for k in ck if k not in ("version", "date", "tz", "utc_offset_hours")]
+    if extra:
+        errs.append("clock: неизвестные ключи " + ", ".join(extra))
+    if not isinstance(ck.get("tz"), str) or not re.fullmatch(r"[A-Za-z_]+(/[A-Za-z_\-]+)+", ck.get("tz") or ""):
+        errs.append("clock.tz: название пояса, например Asia/Tashkent")
+    off = ck.get("utc_offset_hours")
+    if isinstance(off, bool) or not isinstance(off, int) or not -12 <= off <= 14:
+        errs.append("clock.utc_offset_hours: целое от −12 до 14")
+    for k in ("version", "date"):
+        if not isinstance(ck.get(k), str) or not ck.get(k):
+            errs.append(f"clock.{k}: строка")
+    return errs
+
+
+def check_facts_settings(fs) -> list:
+    """Факты об объекте: address_max_chars 20–500, wear_high_from_pct 1–99, version и date — строки."""
+    if not isinstance(fs, dict):
+        return ["object_facts: словарь {version, date, address_max_chars, wear_high_from_pct}"]
+    errs = []
+    known = ("version", "date", "address_max_chars", "wear_high_from_pct", "engine_hours_bands", "spec_site_by_location",
+             "spec_guard_by_guard", "drivers_by_profile", "calibrated")
+    extra = [k for k in fs if k not in known]
+    if extra:
+        errs.append("object_facts: неизвестные ключи " + ", ".join(extra))
+    b = fs.get("engine_hours_bands")
+    if not isinstance(b, list) or len(b) != 3 or any(isinstance(x, bool) or not isinstance(x, (int, float)) or x <= 0
+                                                     for x in b) or not b[0] < b[1] < b[2]:
+        errs.append("object_facts.engine_hours_bands: три возрастающих числа моточасов")
+    for key in ("spec_site_by_location", "spec_guard_by_guard", "drivers_by_profile"):
+        d = fs.get(key)
+        if not isinstance(d, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in d.items()):
+            errs.append(f"object_facts.{key}: словарь {{значение акта: вариант справочника}}")
+    for key, lo, hi in (("address_max_chars", 20, 500), ("wear_high_from_pct", 1, 99)):
+        v = fs.get(key)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:
+            errs.append(f"object_facts.{key}: число от {lo} до {hi}")
+    for k in ("version", "date"):
+        if not isinstance(fs.get(k), str) or not fs.get(k):
+            errs.append(f"object_facts.{k}: строка")
     return errs
 
 
@@ -1791,13 +2092,27 @@ def part_rates_from_text(rate_text, classes) -> dict:
     return out
 
 
-def class_min(ref, product: Optional[dict], cls: str) -> dict:
+def class_min(ref, product: Optional[dict], cls: str, part: Optional[dict] = None) -> dict:
     """
     Минимальная ставка класса части по тарифной политике: первый класс продукта — справочник min_rates (как у
     однопродуктового акта); остальные — ставка части из текста тарифа продукта; класс не из состава продукта или
     ставки нет — None (базой станет техническая ставка класса). source: min_rates | rate_text | rate_text_common |
-    none | not_in_product | no_product.
+    none | not_in_product | no_product | product_parts.
+    part — часть продукта на дату осмотра (app/product_parts.rate_part): минимум и база — из неё. У строк тарифной
+    политики (source = policy) source остаётся прежним (те же цифры, те же строки «как посчитано»), у правок
+    администратора и импорта — product_parts.
     """
+    res = _class_min_policy(ref, product, cls)
+    if part is not None and (product or {}).get("code") and (part.get("min_rate_pct") is not None
+                                                             or part.get("base_rate_pct") is not None):
+        p_min = part.get("min_rate_pct") if part.get("min_rate_pct") is not None else part.get("base_rate_pct")
+        return {"pct": float(p_min), "base_pct": part.get("base_rate_pct"),
+                "source": res["source"] if part.get("source") == "policy" else "product_parts", "part": dict(part)}
+    return res
+
+
+def _class_min_policy(ref, product: Optional[dict], cls: str) -> dict:
+    """Минимум класса части прежним путём: min_rates у первого класса, текст тарифа у остальных."""
     code = (product or {}).get("code")
     if not code:
         return {"pct": None, "source": "no_product"}
@@ -1828,12 +2143,17 @@ def part_rate(ref, product: Optional[dict], cls: str, level: str, sum_insured: f
     mode = (product or {}).get("pricing_mode")
     cm = cm if cm is not None else class_min(ref, product, cls)
     ref2 = ref
-    if code and mode not in NEGOTIATED_MODES and mode != STATUTORY_MODE and cm.get("source") != "min_rates":
-        slot = dict(ref.min_rates.get(code) or {"company": {}, "regulator": {}})
-        slot["company"] = {None: float(cm["pct"])} if cm.get("pct") is not None else {}
-        slot.setdefault("regulator", {})
-        ref2 = dataclasses.replace(ref, min_rates={**ref.min_rates, code: slot})
-    out = rate(ref2, product, cls, level, sum_insured, term_days, object_type, payer_type, settings)
+    if cm.get("part") is not None:
+        # ставка части из product_parts: база, минимум и тип ставки части, справочник не подменяется
+        out = rate(ref, product, cls, level, sum_insured, term_days, object_type, payer_type, settings,
+                   rate_type=cm["part"].get("rate_type") or "annual", part=cm["part"])
+    else:
+        if code and mode not in NEGOTIATED_MODES and mode != STATUTORY_MODE and cm.get("source") != "min_rates":
+            slot = dict(ref.min_rates.get(code) or {"company": {}, "regulator": {}})
+            slot["company"] = {None: float(cm["pct"])} if cm.get("pct") is not None else {}
+            slot.setdefault("regulator", {})
+            ref2 = dataclasses.replace(ref, min_rates={**ref.min_rates, code: slot})
+        out = rate(ref2, product, cls, level, sum_insured, term_days, object_type, payer_type, settings)
     out["class_min"] = dict(cm)
     if out["mode"] in ("statutory", "statutory_undefined"):
         # обязательная часть: ставка и минимум — только нормативный акт, тарифная политика не участвует
@@ -2664,6 +2984,10 @@ def apply_fork(rate_res: dict, adj: Optional[dict], sum_insured: float) -> dict:
     Режим apply: ставка п. 3 становится ставкой акта — applied_pct, премия и строки «как посчитано» (обе поправки).
     rate_res меняется на месте; прежняя ставка и премия — fork_act_pct, fork_act_premium (отметка «ставка акта»).
     """
+    if model_on(rate_res):
+        # модель ставки (ТЗ 13.10.2026): вилка — только справочно («как посчитано»), ставку акта не меняет
+        rate_res["fork_applied"] = False
+        return rate_res
     if not adj or adj.get("mode") != "apply":
         return rate_res
     term = int(rate_res.get("term_days") or 365)
@@ -3067,11 +3391,18 @@ def factor_adjust(class_fields: Optional[dict], template: Optional[dict], settin
     """
     fs = factor_settings(settings)
     cf, rf = dict(class_fields or {}), dict(refinements or {})
-    groups = [g for g in (template or {}).get("factor_groups") or [] if isinstance(g, dict) and g.get("code")]
+    # модель ставки (ТЗ 13.10.2026, задача 4.1): единый справочник класса — группы шаблона и coefficients без
+    # дублей (class_templates.with_catalog → rate_model.factor_catalog); режим всегда «применён»
+    model = rm.enabled(settings)
+    cat = (template or {}).get("factor_catalog") if model else None
+    src = cat if isinstance(cat, list) else (template or {}).get("factor_groups")
+    groups = [g for g in src or [] if isinstance(g, dict) and g.get("code")]
     applied, unfilled = [], []
     raw = 1.0
     for g in groups:
         v = _factor_value(g, cf, rf)
+        if v is None and model and isinstance(g.get("derive"), dict):
+            v = rm.derive_option(g["derive"], cf, rf)
         opt = next((o for o in g.get("options") or [] if isinstance(o, dict) and o.get("code") == v), None) \
             if v is not None else None
         if opt is None:
@@ -3081,15 +3412,24 @@ def factor_adjust(class_fields: Optional[dict], template: Optional[dict], settin
         raw *= coef
         item = {"group": g["code"], "group_label": g.get("label"), "option": opt["code"],
                 "label": opt.get("label"), "coef": coef, "note": opt.get("note")}
+        if model:
+            item["source"] = g.get("source") or "template"
         refs = option_stat_refs(g, opt["code"])
         if refs:
             item["stat_ref"] = refs              # фон региона (stat.uz) — act_analytics.factor_stats, коэффициент не меняет
         applied.append(item)
     lo, hi = float(fs["min_product"]), float(fs["max_product"])
+    if model:
+        kb = rm.settings(settings)["k_object"]
+        lo, hi = float(kb["min"]), float(kb["max"])
     prod = min(hi, max(lo, raw))
-    return {"mode": fs["mode"], "product": _round4(prod), "raw_product": _round4(raw),
-            "clamped": "max" if raw > hi + 1e-12 else ("min" if raw < lo - 1e-12 else None), "bounds": [lo, hi],
-            "applied": applied, "unfilled": unfilled, "groups": len(groups), "calibrated": CALIBRATED}
+    out = {"mode": fs["mode"], "product": _round4(prod), "raw_product": _round4(raw),
+           "clamped": "max" if raw > hi + 1e-12 else ("min" if raw < lo - 1e-12 else None), "bounds": [lo, hi],
+           "applied": applied, "unfilled": unfilled, "groups": len(groups), "calibrated": CALIBRATED}
+    if model:
+        out.update(mode="apply", catalog=isinstance(cat, list), model=True,
+                   inputs={"losses_count": rf.get("losses_count"), "seismic_zone": rf.get("seismic_zone")})
+    return out
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -3186,6 +3526,40 @@ def factor_mark(act_pct: Optional[float], fa: Optional[dict], min_pct: Optional[
     return r, False
 
 
+def _factor_effect_model(fa: dict, rate_res: dict) -> dict:
+    """Модель ставки: K_об из факторов объекта, K_кл из убытков за 3 года, c из сейсмозоны — пересчёт ставки акта
+    (rm_update). Шаги эффекта — вклады множителей rate_model в сумах (от r_брутто, по цепочке)."""
+    facs = [{"code": a["option"], "group": a["group"], "label": a.get("label"), "group_label": a.get("group_label"),
+             "coef": a["coef"], "source": a.get("source") or "template"} for a in fa.get("applied") or []]
+    ins = fa.get("inputs") or {}
+    before = rate_res.get("premium")
+    rm_update(rate_res, None, k_object_factors=facs, losses_count=ins.get("losses_count"),
+              seismic_zone=ins.get("seismic_zone"))
+    res = rate_res.get("rate_model") or {}
+    eff = fa["effect"]
+    if not res.get("available"):
+        eff["reason"] = "no_rate"
+        return fa
+    steps = []
+    for f in res["factors"]:
+        if f["kind"] not in ("object", "bound"):
+            continue
+        steps.append({"kind": "factor" if f["kind"] == "object" else "bound", "group": f.get("group"),
+                      "option": f.get("code"), "coef": f["coef"], "rate_pct": round(f["rate_after_pct"], 4),
+                      "premium": f["premium"], "premium_delta": f["premium_delta"]})
+    eff.update(available=bool(facs), reason=None if facs else "none_filled", base="gross",
+               base_pct=round(res["r_gross"], 4), base_premium=res["premium_gross"], rate_pct=rate_res["applied_pct"],
+               premium=rate_res["premium"], delta_premium=rate_res["premium"] - res["premium_gross"],
+               premium_before_factors=before, floored=bool(res["min_applied"]),
+               min_pct=rate_res.get("min_pct"), rate_type=rate_res.get("rate_type") or "annual",
+               term_days=int(rate_res.get("term_days") or 365), sum_insured=res["sum_insured"], steps=steps,
+               applied_to_act=True, model=True)
+    fa["mode"] = "apply"
+    rate_res["factors_applied"] = bool(facs)
+    rate_res["factor_product"] = res["k_object"]
+    return fa
+
+
 def factor_effect(fa: dict, rate_res: dict, sum_insured: float) -> dict:
     """
     Как факторы объекта меняют ставку и премию (fa["effect"]) и, в режиме apply, ставку акта (rate_res — на месте).
@@ -3204,6 +3578,8 @@ def factor_effect(fa: dict, rate_res: dict, sum_insured: float) -> dict:
     if mode != "tariff" or rate_res.get("applied_pct") is None:
         eff["reason"] = "no_rate"
         return fa
+    if model_on(rate_res):
+        return _factor_effect_model(fa, rate_res)
     if not fa.get("applied"):
         eff["reason"] = "none_filled"
         return fa

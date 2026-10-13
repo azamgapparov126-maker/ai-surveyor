@@ -7,6 +7,7 @@ from .. import act_extras as ax
 from .. import class_templates as ctpl
 from .. import act_texts as tx
 from .. import db
+from .. import product_parts as pp
 
 from .common import clause_catalog
 from .recognize import preferred
@@ -141,12 +142,16 @@ def _part_calc(con, P: dict, idx: int, C: dict) -> dict:
     term = C["term"]
 
     risk = ae.risk_level(ae.part_risk_inputs(C["risk_in"], f, main), st)
-    cm = ae.class_min(ref, product, cls)
-    rate_res = ae.part_rate(ref, product, cls, risk["level"], S, term, otype, op.get("payer_type"), st, cm)
+    # часть продукта на дату осмотра (product_parts): своя база и минимум по типу клиента; нет — прежний путь
+    part = pp.rate_part(con, pcode, cls, C.get("client_type"), C.get("as_of")) if pcode else None
+    cm = ae.class_min(ref, product, cls, part)
+    rate_res = ae.part_rate(ref, product, cls, risk["level"], S, term, otype, op.get("payer_type") or C.get("payer"),
+                            st, cm)
     statutory = rate_res["mode"] in ("statutory", "statutory_undefined")
     # факторы объекта части (02.10.2026): по шаблону класса части, до вилки и франшизы
     fa = ae.factor_effect(aa.factor_stats(con, ae.factor_adjust(op.get("class_fields"), tpl, st, op),
                                           region_for_stats(m)), rate_res, S)
+    ae.unify_risk(risk, rate_res)                      # модель ставки: уровень части — из K_об
     # вилка ставки части (01.10.2026): поправки региона и рынка по классу и виду объекта части
     fs = C.get("fs") or ae.fork_settings(st)
     ferrs = []
@@ -182,7 +187,8 @@ def _part_calc(con, P: dict, idx: int, C: dict) -> dict:
     try:
         meas = ax.measures(con, ctx, rate_res, cls=cls, group=group_ra, kind=kind_ra, S=S, V=V, o=op,
                            location=location, statutory=statutory, th=th, premium=premium_final,
-                           codes=veh_measure_codes(tpl, veh_group, group_ra))
+                           codes=ae.client_filter(veh_measure_codes(tpl, veh_group, group_ra), st,
+                                                  C.get("client_type"), "measures"))
     except Exception as e:
         errs.append({"block": f"part{idx}:measures", "error": type(e).__name__})
         meas = {"items": [], "total": {"count": 0}, "error": type(e).__name__}
@@ -207,6 +213,8 @@ def _part_calc(con, P: dict, idx: int, C: dict) -> dict:
     clause_codes = ctpl.for_group(tpl.get("clauses"), group)
     clauses = ae.clauses_by_codes(clause_codes, clause_catalog()) if clause_codes is not None \
         else ae.clauses(group, clause_catalog())
+    keep = ae.client_filter([c["code"] for c in clauses], st, C.get("client_type"), "clauses")
+    clauses = [c for c in clauses if c["code"] in keep]      # у физлица нет оговорок работодателя
     views_req = ctpl.for_group(tpl.get("required_views"), group)
     if views_req is None:
         views_req = ae.required_views(group)
@@ -238,7 +246,9 @@ def _part_calc(con, P: dict, idx: int, C: dict) -> dict:
         "premium_final": {"amount": premium_final, "rate_pct": rate_final,
                           "franchise_applied": bool(fr.get("applied"))},
         "scenarios": scen, "measures": meas, "analytics": analytics, "clauses": clauses, "checks": checks,
-        "missing": _part_missing(tpl, op, kind, main, C["recognized"]),
+        "missing": [x for x in _part_missing(tpl, op, kind, main, C["recognized"])
+                    if C.get("client_type") != "fiz"
+                    or x["code"] not in (ae.client_type_rules(st).get("yur_only_fields") or [])],
         "rate_fork": _fork_finish(fork_in, fork_adj, fs, rate_res, S, None, None, analytics, premium_final,
                                   bool(fr.get("applied")), factors=fa),
         "factor_adjustment": fa,
@@ -370,8 +380,14 @@ def _apply_parts(con, clean: dict, D: dict, C: dict) -> None:
     own = items[0]["optional"]
     D["missing"] = [k for k in D["missing"] if own.get(k) in (None, "")]
     missing_key = [k for k in C["missing_key"] if own.get(k) in (None, "")]
-    dec = ae.decision(D["risk"], {"mode": "tariff"}, D["value"], {"needed": False}, C["disc"], C["inspection"],
-                      missing_key, st)
+    rr = {"mode": "tariff"}
+    if any(ae.model_on(p["rate"]) for p in items):
+        # модель ставки: уровень договора — худший уровень частей (из K_об), «На рассмотрение» — по любой части
+        rr = {"mode": "tariff", "model": "rate_model",
+              "rate_model": {"available": True, "risk_level": D["risk"].get("level"),
+                             "k_object": D["risk"].get("k_object")},
+              "refer": [r for p in items for r in (p["rate"].get("refer") or [])]}
+    dec = ae.decision(D["risk"], rr, D["value"], {"needed": False}, C["disc"], C["inspection"], missing_key, st)
     chk = dec["checks"]
     if not plan["confirmed"]:
         chk.append({"code": "c_parts_confirm", "params": {"source": plan["source"]}})
@@ -458,14 +474,15 @@ def _object_calc(con, ob: dict, X: dict) -> dict:
     elif cond:
         ri["condition"] = cond
     risk = ae.risk_level(ri, st)
-    rate_res = ae.rate(ref, X["product"], cls, risk["level"], S, term, otype, o.get("payer_type"), st,
-                       rate_type=X["rate_type"])
+    rate_res = ae.rate(ref, X["product"], cls, risk["level"], S, term, otype, X.get("payer") or o.get("payer_type"),
+                       st, rate_type=X["rate_type"], part=X.get("part"))
     _min_how(rate_res, X["min_info"])
     if X["no_products"]:
         rate_res = _no_products_rate(rate_res, cls)
     rate_res.pop("engine_chain", None)                 # цепочка калькулятора — у договора, у объекта не нужна
     fa = ae.factor_effect(aa.factor_stats(con, ae.factor_adjust(cf, X["tpl"], st, op), region_for_stats(X["m"])),
                           rate_res, S)
+    ae.unify_risk(risk, rate_res)                      # модель ставки: уровень объекта — из K_об
     adj = None
     if X["fork_in"] is not None:
         adj = ae.fork_adjust(_annual_view(rate_res), X["fork_in"]["region"], X["fork_in"]["market"], X["fs"])

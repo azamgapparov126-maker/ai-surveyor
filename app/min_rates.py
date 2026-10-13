@@ -87,17 +87,20 @@ router = APIRouter()
 def ensure(con) -> None:
     for sql in SCHEMA_SQL:
         con.execute(sql)
+    from . import product_parts         # версии частей продуктов исключаются из current_version (импорт здесь: цикл)
+    product_parts.ensure(con)
 
 
 def current_version(con, level: str, as_of: Optional[str] = None) -> Optional[int]:
     """Действующая на дату версия тарифов уровня — без версий правок по одному продукту (минимальная ставка,
-    базовая ставка из импорта): те ссылаются на продукт, а расчёт и акт хранят версию всего уровня."""
+    базовая ставка из импорта, части продукта): те ссылаются на продукт, а расчёт и акт хранят версию всего уровня."""
     d = as_of or date.today().isoformat()
     ensure(con)
     r = con.execute("SELECT id FROM tariff_versions WHERE level=? AND effective_from <= ? AND "
                     "(effective_to IS NULL OR effective_to >= ?) "
                     "AND id NOT IN (SELECT tariff_version_id FROM min_rate_versions) "
                     "AND id NOT IN (SELECT tariff_version_id FROM product_rate_versions) "
+                    "AND id NOT IN (SELECT tariff_version_id FROM product_part_versions) "
                     "ORDER BY effective_from DESC, id DESC LIMIT 1", (level, d, d)).fetchone()
     return r[0] if r else None
 

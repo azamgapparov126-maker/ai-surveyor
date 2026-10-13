@@ -11,8 +11,9 @@
 Что проверяем:
   1. Четыре поля (класс/продукт, сумма, стоимость, регион) — анализ идёт, остальное подставлено,
      каждое допущение перечислено в assumptions, полнота и уверенность ниже полного ввода.
-  2. Полный ввод даёт те же контрольные числа, что и раньше:
-     склад 6 048 000; производство 8/9 612 927 966; спецтехника 17 496 000.
+  2. Полный ввод даёт контрольные числа: эталон ТЗ 13.10.2026 (модель ставки) — склад 3 620 694; производство 8/9
+     94 604 500; спецтехника 4 200 000; прежний путь (rate_model.enabled = false) — как раньше: 6 048 000;
+     612 927 966; 17 496 000.
   3. Пресет (GET /analytics/risk/presets) + суммы и регион → анализ проходит.
   4. Последние значения (GET/PUT /analytics/risk/last) читает только свой пользователь.
 """
@@ -30,6 +31,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 os.environ.pop("SURVEYOR_DEV", None)
 
+import rm_modes  # noqa: E402
 from tmpdb import temp_db                      # noqa: E402
 from app import auth, db                       # noqa: E402
 from app import risk_analytics as ra           # noqa: E402
@@ -154,27 +156,31 @@ def check_quick():
 EX1 = ({"class_code": "9", "object_type": "Склад", "sum_insured": 4.2e9, "object_value": 4.2e9,
         "region": "Ташкентская область", "term_months": 12, "construction": "reinforced",
         "activity": "warehouse"},
-       {"protection": "alarm_guard", "losses_3y": {"count": 0, "amount": 0}}, 6_048_000)
+       {"protection": "alarm_guard", "losses_3y": {"count": 0, "amount": 0}}, 6_048_000, 3_620_694)
 EX2 = ({"class_code": "8/9", "object_type": "Производство", "sum_insured": 50e9, "object_value": 50e9,
         "region": "г. Ташкент", "term_months": 12, "construction": "reinforced", "activity": "food"},
        {"protection": "alarm_guard", "seismic_zone": "8–9", "wear_pct": 30,
         "losses_3y": {"count": 1, "amount": 300e6}, "deductible": {"pct": 0.5},
         "compartments": {"count": 4, "largest_value": 18e9},
-        "bi": {"monthly_amount": 1e9, "recovery_months": 4}}, 612_927_966)
+        "bi": {"monthly_amount": 1e9, "recovery_months": 4}}, 612_927_966, 94_604_500)
 EX3 = ({"class_code": "3", "product_code": "0318", "object_type": "Спецтехника — экскаватор",
         "sum_insured": 1.2e9, "object_value": 1.5e9, "region": "Навоийская область", "term_months": 12,
         "vehicle_type": "special", "year": 2021},
-       {"protection": "tracker", "losses_3y": {"count": 2, "amount": 150e6}}, 17_496_000)
+       {"protection": "tracker", "losses_3y": {"count": 2, "amount": 150e6}}, 17_496_000, 4_200_000)
 
 
 def check_numbers():
-    print("2. контрольные примеры при полном вводе не изменились")
-    with db.tx() as con:
-        for name, (must, optional, want) in (("склад", EX1), ("производство 8/9", EX2), ("экскаватор", EX3)):
-            r = ra.analyze(con, must, optional, thresholds=NO_EXT, market={"rate_pct": 0.18}, as_of=AS_OF)
-            ok(f"{name}: премия {want:,}".replace(",", " "), abs(r["summary"]["premium"] - want) <= 1,
-               r["summary"]["premium"])
-            ok(f"{name}: допущений нет", r["assumptions"] == [])
+    print("2. контрольные примеры при полном вводе: эталон ТЗ 13.10.2026 и прежний путь")
+    for mode in ("model", "legacy"):
+        rm_modes.set_mode(mode)
+        with db.tx() as con:
+            for name, (must, optional, old, new) in (("склад", EX1), ("производство 8/9", EX2), ("экскаватор", EX3)):
+                want = new if mode == "model" else old
+                r = ra.analyze(con, must, optional, thresholds=NO_EXT, market={"rate_pct": 0.18}, as_of=AS_OF)
+                ok(f"{name} ({mode}): премия {want:,}".replace(",", " "), abs(r["summary"]["premium"] - want) <= 1,
+                   r["summary"]["premium"])
+                ok(f"{name} ({mode}): допущений нет", r["assumptions"] == [])
+    rm_modes.set_mode("model")
 
 
 # ---------- 3. пресеты ----------

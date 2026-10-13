@@ -6,7 +6,7 @@
     sandbox\\.venv\\Scripts\\python.exe tests\\test_uzex.py
 
 Что проверяется:
-  1. разбор копии котировочного листа sandbox/uzex_c.html: 10 строк, цена лота и цена за единицу, группы;
+  1. разбор копии котировочного листа tests/fixtures/uzex_c.html: 10 строк, цена лота и цена за единицу, группы;
   2. разбор реестра сделок (короткая копия таблицы ниже): дата сделки, цена за тонну у сделок разного объёма,
      одинаковые сделки не склеиваются;
   3. числа с запятой, даты, группы товаров по названию и по свободному тексту;
@@ -73,8 +73,8 @@ REG_HTML = """<table class="table"><thead><tr>
 
 # ------------------------------------------------------------------ 1–3. разбор
 def check_parse():
-    print("1. Котировочный лист (sandbox/uzex_c.html)")
-    html = (ROOT / "sandbox" / "uzex_c.html").read_text(encoding="utf-8")
+    print("1. Котировочный лист (tests/fixtures/uzex_c.html)")
+    html = (ROOT / "tests" / "fixtures" / "uzex_c.html").read_text(encoding="utf-8")
     rows = us.parse_page("ContractsSumNew", html, "2026-10-02T02:00:00", us.page_url("ContractsSumNew"))
     by = {r["contract_no"]: r for r in rows}
     ok("10 строк, у всех ссылка на страницу биржи и пометка «на дату загрузки», даты сделки нет",
@@ -289,7 +289,7 @@ def check_api():
     st, _ = call("POST", "/exchange/refresh", who="тест-uzex-агент")
     ok("refresh агентом — 403", st == 403, st)
 
-    html = (ROOT / "sandbox" / "uzex_c.html").read_text(encoding="utf-8")
+    html = (ROOT / "tests" / "fixtures" / "uzex_c.html").read_text(encoding="utf-8")
     orig = us.fetch_quotes
     seen = []
 

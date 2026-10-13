@@ -39,7 +39,7 @@ os.environ.pop("SURVEYOR_DEV", None)
 os.environ["SURVEYOR_NO_BACKGROUND"] = "1"
 os.environ["LEX_LIVE"] = "0"
 
-from tmpdb import temp_db                     # noqa: E402
+from tmpdb import ensure_market_stats, temp_db  # noqa: E402
 from app import capacity, db, llm, rankings   # noqa: E402
 from app import market_expert as mx           # noqa: E402
 import tools.ranking_parse as rp              # noqa: E402
@@ -356,8 +356,11 @@ def check_expert():
 
 def main():
     check_sample()
-    rows, _rep = check_full()
     with temp_db("surveyor-ranking-test.db"):
+        # чистая машина (git clone → tools/db_build.py): статистики НАПП в базе ещё нет — грузим её в копию из
+        # data/parsed (как tools/market_stats.py в образе); имена страховщиков сверяются с ней
+        ensure_market_stats()
+        rows, _rep = check_full()
         check_load(rows)
         check_inson_rows()
         check_financials()

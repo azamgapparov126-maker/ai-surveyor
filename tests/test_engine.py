@@ -2,12 +2,17 @@
 Контрольные примеры движка. Запуск:  python tests/test_engine.py
 Без pytest: обычные assert, чтобы не ставить лишнего.
 """
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+os.environ["SURVEYOR_NO_BACKGROUND"] = "1"     # пересборка знаний о рынке после рэнкинга в тесте не нужна
 
-from app import db                      # noqa: E402
+from tmpdb import temp_db               # noqa: E402
+import rm_modes                         # noqa: E402
+from app import db, rankings            # noqa: E402
 from app.engine import Input, calculate, min_rate  # noqa: E402
 
 
@@ -93,7 +98,12 @@ def test_preventive_measures():
                                       "seismic": "z9", "wear": "old", "loss_history": "clean", "franchise": "f1"}))
     codes = {m["code"]: m for m in out["preventive_measures"]}
     assert "alarm_install" in codes and codes["alarm_install"]["mandatory"] and codes["alarm_install"]["deadline_days"] == 60
-    assert codes["alarm_install"]["premium_delta"] < 0
+    if rm_modes.legacy():
+        assert codes["alarm_install"]["premium_delta"] < 0
+    else:
+        # модель ставки (ТЗ 13.10.2026): дерево × без защиты × старое здание × 9 баллов — ставка 0,2078 % упирается
+        # в 3 × тарифа 0807 (0,15 %, «на рассмотрение»); сигнализация её не опускает ниже границы — экономии нет
+        assert codes["alarm_install"]["premium_delta"] in (0, None) or codes["alarm_install"]["premium_delta"] < 0
     assert "fire_treatment" in codes and "wiring_check" in codes and "seismic_survey" in codes
     print("мероприятия:", ", ".join(f"{m['measure'][:30]}… ({'условие' if m['mandatory'] else 'совет'})" for m in out["preventive_measures"]))
 
@@ -264,7 +274,10 @@ def test_purpose_analysis():
 
 
 if __name__ == "__main__":
-    for name, fn in list(globals().items()):
-        if name.startswith("test_"):
-            fn()
+    # копия базы: на чистой машине (git clone → tools/db_build.py) рэнкинга ещё нет, а ёмкость считается от
+    # собственных средств и резервов из него — загружаем его в копию тем же путём, что сервер при старте
+    with temp_db("surveyor-engine-test.db"):
+        rankings.ensure_loaded()
+        # оба режима: модель ставки ТЗ 13.10.2026 (по умолчанию) и прежний путь (rate_model.enabled = false)
+        rm_modes.run_both([fn for name, fn in list(globals().items()) if name.startswith("test_")], "движок:")
     print("Все проверки пройдены.")

@@ -8,8 +8,10 @@ import shutil
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -101,8 +103,37 @@ def ensure_tables(con) -> None:
         con.execute(sql)
 
 
+def _utcnow() -> datetime:
+    """Часы сервера в UTC (тесты подменяют эту функцию, чтобы проверить переход даты)."""
+    return datetime.now(timezone.utc)
+
+
+@lru_cache(maxsize=8)
+def _zone(name: str, offset_hours: int):
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        # на Windows без пакета tzdata базы поясов нет — постоянный сдвиг из настроек (у Ташкента он не меняется)
+        return timezone(timedelta(hours=offset_hours), name)
+
+
+def act_zone(settings: Optional[dict] = None):
+    """Пояс акта из настроек clock (по умолчанию Asia/Tashkent)."""
+    ck = (settings or {}).get("clock") or ae.DEFAULT_SETTINGS["clock"]
+    return _zone(str(ck["tz"]), int(ck["utc_offset_hours"]))
+
+
 def _now() -> datetime:
-    return datetime.now()
+    """
+    Время акта по Ташкенту без пояса в записи: created_at, expires_at и номер акта пишутся в том же виде, что раньше
+    (ГГГГ-ММ-ДДTчч:мм:сс), поэтому сравнение строк в очистке и чтении акта не меняется — все стороны берут _now().
+    """
+    return _utcnow().astimezone(act_zone()).replace(tzinfo=None)
+
+
+def _today() -> date:
+    """Дата по Ташкенту: возраст объекта, дата снимков объявлений, «сегодня» в правилах акта."""
+    return _now().date()
 
 
 class _Window:

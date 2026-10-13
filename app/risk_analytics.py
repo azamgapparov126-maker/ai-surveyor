@@ -3,7 +3,7 @@
 
 Человек загружает обязательные (must) и дополнительные (optional) данные об объекте и получает
 дашборд: краткий обзор (премия, страховая сумма, стоимость), техническую картину с рынком,
-риски и их драйверы, три сценария максимального убытка (PML, EML, MFL) и итоговый уровень риска.
+риски и их драйверы, три сценария максимального убытка (PML ≤ EML ≤ MFL — как в акте) и итоговый уровень риска.
 
 Чистая модель, без HTTP: роутер пишет backend. Всё, что считает цену, берётся из движка
 (app/engine.py: calculate / rate_for / min_rate); ёмкость и таблица линий — из app/capacity.py.
@@ -41,8 +41,13 @@ CALIBRATED = 0
 EXPERT = "экспертно, calibrated=0"
 
 # ================================================================================================
-# Назначение сценариев. Заказчик (21.09.2026): PML → стандартный тариф, EML → лимит удержания.
-# В заметке «Максимальный убыток и собственное удержание» наоборот (EML → тариф, PML → удержание).
+# Сценарии и их назначение. Названия совпадают с актом (задача 4.1 ТЗ 13.10.2026): PML ≤ EML ≤ MFL.
+#   PML — вероятный максимальный убыток, защита сработала штатно (наименьший);
+#   EML — оценочный максимальный убыток, защита сработала частично;
+#   MFL — максимально предвидимый убыток, защита не сработала (катастрофа).
+# До 13.10.2026 здесь было наоборот (EML — «защита сработала», PML — «частично»), и акт переставлял названия
+# (act_extras.ACT_FROM_RA). Назначение — как сказал заказчик 21.09.2026: PML → стандартный тариф, EML → лимит
+# удержания; теперь удержание считается от того же EML, что в акте (защита сработала частично).
 # Переключение трактовки — одна правка этого словаря; формулы сценариев от назначения не зависят.
 # ================================================================================================
 SCENARIO_PURPOSE = {"PML": "tariff", "EML": "retention", "MFL": "catastrophe"}
@@ -52,18 +57,16 @@ PURPOSE_TITLE = {
     "catastrophe": "катастрофический сценарий и перестрахование (оценочно)",
 }
 SCENARIO_TITLE = {
-    "EML": "EML — оценочный максимальный убыток (защита сработала штатно)",
-    "PML": "PML — максимально вероятный убыток (защита сработала частично)",
+    "PML": "PML — вероятный максимальный убыток (защита сработала штатно)",
+    "EML": "EML — оценочный максимальный убыток (защита сработала частично)",
     "MFL": "MFL — максимально предвидимый убыток (защита не сработала, катастрофа)",
 }
 TERMS_NOTE = (
-    "Трактовки расходятся. Заказчик: PML → стандартный тариф, EML → лимит собственного удержания. "
-    "Заметка проекта «Максимальный убыток и собственное удержание» (континентальная трактовка): "
-    "EML → тариф, PML → удержание. В британской практике (учебник CII) EML — основная мера для "
-    "удержания, а PML часто синоним EML. Сами сценарии посчитаны по определениям заметки "
-    "(EML — защита сработала, PML — сработала частично, MFL — не сработала), а связь с блоками — "
-    "как сказал заказчик. Так как EML не больше PML, удержание от EML менее осторожно, чем от PML. "
-    "Вопрос вынесен заказчику; переключается одной правкой SCENARIO_PURPOSE."
+    "Названия сценариев — как в акте: PML ≤ EML ≤ MFL (PML — защита сработала штатно, EML — частично, "
+    "MFL — не сработала). Назначение — по заказчику: PML → стандартный тариф, EML → лимит собственного "
+    "удержания. Заметка проекта «Максимальный убыток и собственное удержание» (континентальная трактовка) "
+    "связывает их наоборот; в британской практике (учебник CII) EML — основная мера для удержания. "
+    "Переключается одной правкой SCENARIO_PURPOSE."
 )
 
 LEVEL_NAMES = ["Низкий", "Умеренный", "Повышенный", "Высокий", "Критический"]
@@ -79,24 +82,24 @@ DEFAULT_PRODUCT_SPECIAL = "0318"          # спецтехника: «Добро
 # собственное удержание.md (отсеки, защита, сейсмика по всей площадке); сами доли — экспертные.
 # ------------------------------------------------------------------------------------------------
 FIRE_SHARE = {        # доля наибольшего противопожарного отсека, которая погибнет при пожаре
-    "EML": {"sprinkler": 0.25, "alarm_guard": 0.40, "alarm": 0.50, "none": 0.70},
-    "PML": {"sprinkler": 0.50, "alarm_guard": 0.70, "alarm": 0.80, "none": 1.00},
+    "PML": {"sprinkler": 0.25, "alarm_guard": 0.40, "alarm": 0.50, "none": 0.70},
+    "EML": {"sprinkler": 0.50, "alarm_guard": 0.70, "alarm": 0.80, "none": 1.00},
     "MFL": {"sprinkler": 1.00, "alarm_guard": 1.00, "alarm": 1.00, "none": 1.00},
 }
-FIRE_ADD = {"wood": 0.20, "flammable": 0.20, "far_station": 0.10}   # надбавки к доле (EML, PML)
+FIRE_ADD = {"wood": 0.20, "flammable": 0.20, "far_station": 0.10}   # надбавки к доле (PML, EML)
 EQ_SHARE = {          # доля стоимости всей площадки при землетрясении, железобетон/кирпич
-    6: {"EML": 0.02, "PML": 0.05, "MFL": 0.10},
-    7: {"EML": 0.05, "PML": 0.10, "MFL": 0.20},
-    8: {"EML": 0.10, "PML": 0.20, "MFL": 0.40},
-    9: {"EML": 0.20, "PML": 0.35, "MFL": 0.60},
-    10: {"EML": 0.30, "PML": 0.50, "MFL": 0.80},
+    6: {"PML": 0.02, "EML": 0.05, "MFL": 0.10},
+    7: {"PML": 0.05, "EML": 0.10, "MFL": 0.20},
+    8: {"PML": 0.10, "EML": 0.20, "MFL": 0.40},
+    9: {"PML": 0.20, "EML": 0.35, "MFL": 0.60},
+    10: {"PML": 0.30, "EML": 0.50, "MFL": 0.80},
 }
 EQ_CONSTRUCTION = {"reinforced": 1.0, "mixed": 1.2, "wood": 1.1}
 EQ_WEAR = {"new": 0.9, "mid": 1.0, "old": 1.25}
 EQ_TALL_FLOORS, EQ_TALL_MULT = 5, 1.1     # от 5 этажей сейсмическая нагрузка выше
-DAMAGE9_SHARE = {"EML": 0.10, "PML": 0.25, "MFL": 0.50}   # кража, вода, прочее — от наибольшего отсека
+DAMAGE9_SHARE = {"PML": 0.10, "EML": 0.25, "MFL": 0.50}   # кража, вода, прочее — от наибольшего отсека
 DAMAGE9_PROTECTION = {"none": 1.5, "alarm": 1.0, "alarm_guard": 0.8, "sprinkler": 0.8}
-VEHICLE_SHARE = {"EML": 0.50, "PML_protected": 0.75, "PML_unprotected": 1.00, "MFL": 1.00}
+VEHICLE_SHARE = {"PML": 0.50, "EML_protected": 0.75, "EML_unprotected": 1.00, "MFL": 1.00}
 BI_SHARE_MFL = 1.0
 
 # какие риски по смыслу затрагивает фактор (для объяснения; движок применяет множитель ко всей
@@ -986,6 +989,11 @@ def engine_factors(classes: list, must: dict, optional: dict, th: dict, as_of: d
             notes.append(UNKNOWN_AGE_LABEL + f" — {EXPERT}")
         if _present(optional.get("protection")):
             f["antitheft"] = optional["protection"]
+        # спецтехника и водители (13.10.2026): варианты справочника из фактов акта (app/act_pkg/facts.ra_optional);
+        # неизвестный вариант движок не найдёт в справочнике — множитель 1, как «не указано»
+        for key in ("engine_hours", "spec_site", "spec_guard", "spec_operator", "drivers"):
+            if _present(optional.get(key)):
+                f[key] = optional[key]
     losses = optional.get("losses_3y")
     if isinstance(losses, dict) and _present(losses.get("count")):
         n = int(_to_float(losses.get("count")) or 0)
@@ -1077,7 +1085,7 @@ def _scenarios_class8(S, V, must, optional, factors, th) -> dict:
         eq_mult_txt += f" × этажность {num(EQ_TALL_MULT)}"
 
     out = {}
-    for s in ("EML", "PML", "MFL"):
+    for s in ("PML", "EML", "MFL"):
         a = list(assumptions)
         base_C = V if (s == "MFL" and spread) else C
         if s == "MFL" and spread:
@@ -1136,7 +1144,7 @@ def _scenarios_class9(S, V, optional) -> dict:
     prot = prot or "none"
     m = DAMAGE9_PROTECTION[prot]
     out = {}
-    for s in ("EML", "PML", "MFL"):
+    for s in ("PML", "EML", "MFL"):
         d = min(1.0, DAMAGE9_SHARE[s] * m)
         prop = C * d * k
         a = base_a + [f"Доля помещения, которая пострадает (кража, вода, прочее), {num(DAMAGE9_SHARE[s])} "
@@ -1154,11 +1162,11 @@ def _scenarios_vehicle(S, V, optional) -> dict:
     k = min(S, V) / V
     prot = optional.get("protection") if _present(optional.get("protection")) else None
     protected = prot in ("immo", "tracker")
-    shares = {"EML": VEHICLE_SHARE["EML"],
-              "PML": VEHICLE_SHARE["PML_protected" if protected else "PML_unprotected"],
+    shares = {"PML": VEHICLE_SHARE["PML"],
+              "EML": VEHICLE_SHARE["EML_protected" if protected else "EML_unprotected"],
               "MFL": VEHICLE_SHARE["MFL"]}
-    why = {"EML": "крупное ДТП с ремонтом",
-           "PML": ("конструктивная гибель (ремонт дороже 75% стоимости)" if protected
+    why = {"PML": "крупное ДТП с ремонтом",
+           "EML": ("конструктивная гибель (ремонт дороже 75% стоимости)" if protected
                    else "угон или полная гибель: противоугонной системы с иммобилайзером или поиском нет"),
            "MFL": "полная гибель или угон"}
     out = {}
@@ -1174,7 +1182,7 @@ def _scenarios_vehicle(S, V, optional) -> dict:
 def _scenarios_generic(S, V, cls) -> dict:
     out = {}
     base = min(S, V) if V else S
-    for s in ("EML", "PML", "MFL"):
+    for s in ("PML", "EML", "MFL"):
         out[s] = {"amount": base, "property_loss": base, "bi_loss": 0.0, "fire_loss": None,
                   "earthquake_loss": None, "dominant": "полная сумма",
                   "formula": f"{s} = страховая сумма {money(base)} сум",
@@ -1223,10 +1231,15 @@ def analyze(con, must: dict, optional: Optional[dict] = None, thresholds: Option
         if pnote:
             notes.append(pnote)
         pname = (ref.products.get(prod) or {}).get("name", "")
+        losses = optional.get("losses_3y")
+        n_losses = _to_float(losses.get("count")) if isinstance(losses, dict) and _present(losses.get("count"))             else None
+        # модель ставки (ТЗ 13.10.2026): убытки за 3 года — K_кл, сейсмозона — катастрофическая надбавка c
         inp = Input(product_code=prod or "", class_code=cls, object_type=must["object_type"],
                     value_amount=V, sum_insured=S, term_days=T, factors=dict(factors),
                     payer_type=optional.get("payer_type"), takaful=pname.startswith("Такафул"),
-                    docs_received=list(optional.get("docs_received") or []))
+                    docs_received=list(optional.get("docs_received") or []),
+                    losses_count=int(n_losses) if n_losses is not None else None,
+                    seismic_zone=_seismic_zone(optional.get("seismic_zone")))
         # анализ риска: без проверок оформления договора (оплата премии, раскрытие) и без заявления-анкеты
         out = calculate(ref, inp, purpose=engine.PURPOSE_ANALYSIS)
         r = rate_for(ref, inp)
@@ -1294,7 +1307,18 @@ def analyze(con, must: dict, optional: Optional[dict] = None, thresholds: Option
             applies = f != "seismic" or "earthquake" in r["included"]
             m = opt["multiplier"] if applies else 1.0
             without = {k: v2 for k, v2 in inp.factors.items() if k != f}
-            eff_sum = base_prem - _auto_premium(ref, _with_factors(inp, without))
+            alt = _with_factors(inp, without)
+            rmr = r.get("rate_model") or {}
+            if rmr.get("available") and f in ("loss_history", "seismic"):
+                # модель ставки (ТЗ 13.10.2026): убытки — множитель K_кл, сейсмозона — надбавка c, а не коэффициенты
+                if f == "loss_history":
+                    alt.losses_count = None
+                    m = rmr["k_client"]
+                else:
+                    alt.seismic_zone = None
+            eff_sum = base_prem - _auto_premium(ref, alt)
+            if rmr.get("available") and f == "seismic" and base_prem - eff_sum > 0:
+                m = round(base_prem / (base_prem - eff_sum), 4)
             row = {"factor": opt["factor_name"], "factor_code": f, "option": opt["name"],
                    "option_code": inp.factors.get(f), "multiplier": m, "effect": _effect(m),
                    "premium_effect": round(eff_sum), "class_code": p["class_code"], "calibrated": 0}
@@ -1366,7 +1390,7 @@ def analyze(con, must: dict, optional: Optional[dict] = None, thresholds: Option
 
     retention = _retention(con, classes, S)
     scenarios = {}
-    for s in ("EML", "PML", "MFL"):
+    for s in ("PML", "EML", "MFL"):
         # одно событие затрагивает один класс: огонь — класс 8, кража — класс 9 — берём больший сценарий
         best_cls = max(per_class, key=lambda c: per_class[c][s]["amount"])
         sc = dict(per_class[best_cls][s])
@@ -1742,7 +1766,7 @@ def _method() -> dict:
             "Сценарий = max(пожар, землетрясение) × (сумма / стоимость, не больше 1) + простой "
             "(прибыль и постоянные расходы в месяц × срок восстановления × доля).",
             "Класс 9: наибольшее помещение × доля (кража, вода, прочее) × поправка на защиту.",
-            "Транспорт: EML 50% суммы, PML 75% (есть иммобилайзер или поиск) или 100%, MFL 100%.",
+            "Транспорт: PML 50% суммы, EML 75% (есть иммобилайзер или поиск) или 100%, MFL 100%.",
             "Лимит на один риск = 20% × (собственные средства + резервы); удержание = min(сценарий удержания, "
             "лимит, таблица линий класса).",
             "Сверх удержания по MFL — требует перестрахования (оценочно).",

@@ -158,8 +158,12 @@ def check_admin_edit_visible():
         "calibrated": 0, "source": "тест оптимизации"})
     ok("3. админ-API: коэффициент сохранён", st == 200, r)
     st, after = jcall("POST", "/calculate", WAREHOUSE)
-    ratio = after["rates"]["net_pct"] / base["rates"]["net_pct"]
-    ok("3а. следующий /calculate видит новый коэффициент сразу (нетто ×%.3f)" % ratio,
+    # множитель конструкции в цепочке расчёта: у модели ставки ТЗ 13.10.2026 коэффициенты — в K_об, а не в нетто
+    # (нетто — рынок НАПП), поэтому сравнивается сам множитель строки «Конструкция …»
+    def _m(x):
+        return next(r["mult"] for r in x["explanation"] if str(r.get("name", "")).startswith(c["factor_name"]))
+    ratio = _m(after) / _m(base)
+    ok("3а. следующий /calculate видит новый коэффициент сразу (множитель ×%.3f)" % ratio,
        st == 200 and abs(ratio - 2.0) < 1e-6)
 
     today = datetime.now().date().isoformat()

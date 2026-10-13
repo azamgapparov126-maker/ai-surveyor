@@ -186,6 +186,19 @@ def startup():
         rankings.ensure_loaded()
     except Exception as e:                 # нет файла или он не разобрался — сервер всё равно поднимается
         print("рэнкинг страховщиков не загружен:", e)
+    try:                                   # части продуктов из тарифной политики — если таблица ещё пуста
+        from . import product_parts
+        with db.tx() as _con:
+            _res = product_parts.seed_if_empty(_con)
+        if _res:
+            print(f"части продуктов: {_res['rows']} строк по {_res['products']} продуктам")
+    except Exception as e:                 # расчёт идёт прежним путём (rate_text и min_rates)
+        print("части продуктов не заведены:", e)
+    try:                                   # актуарный отчёт 2022 → actuarial_reports, если таблица пуста
+        from . import actuarial
+        actuarial.ensure_loaded()
+    except Exception as e:                 # сверка сумм не прошла или нет файла — причина в журнале
+        print("актуарный отчёт не загружен:", e)
     UPLOADS.mkdir(parents=True, exist_ok=True)
     (db.DATA_DIR / "photos").mkdir(parents=True, exist_ok=True)
     # фоновые потоки: каждый не больше одного, SURVEYOR_NO_BACKGROUND=1 выключает все (тесты, замеры)
@@ -407,11 +420,15 @@ REF_SQL = {
 
 
 @app.get("/reference/{name}")
-def reference(name: str):
+def reference(name: str, request: Request, year: Optional[str] = None):
     if name == "min-rates":
         # минимальные ставки страховщика с версиями (app/min_rates.py); путь общий с остальными справочниками
         from . import min_rates
         return min_rates.list_min_rates()
+    if name == "actuarial-reports":
+        # актуарный отчёт по субпортфелям (app/actuarial.py, ТЗ 13.10.2026 день 2.3): только администратор
+        from . import actuarial
+        return actuarial.respond_list(request, year)
     if name not in REF_SQL:
         raise HTTPException(404, "Нет такого справочника")
     with db.tx() as con:
@@ -1159,6 +1176,8 @@ for _mod, _name in (("portfolio", "portfolio_router"), ("proposal", "proposal_ro
                     ("risk_api", "risk_router"), ("analysis_docs", "analysis_docs_router"),
                     ("legal", "legal_router"), ("surveyor_chat", "surveyor_chat_router"),
                     ("act", "act_router"), ("min_rates", "min_rates_router"),
+                    # ТЗ 13.10.2026, день 2: части продуктов (API и Excel) и актуарный отчёт
+                    ("product_parts", "product_parts_router"), ("actuarial", "actuarial_router"),
                     # админ-панель 02.10.2026: сотрудник вручную, импорт продуктов и страховых случаев
                     ("staff", "staff_router"), ("product_import", "product_import_router"),
                     ("claims_import", "claims_import_router"),
