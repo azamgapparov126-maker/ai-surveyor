@@ -13,17 +13,24 @@
 Время — от первого запроса до получения PDF. Гостевой доступ (cookie gid), только стандартная библиотека
 (urllib + cookie-jar): TestClient без httpx недоступен.
 
-Допуски (п. 10.1): ставка ±0,005 п.п. к эталону (у комплексного продукта — и каждая часть), стоимость в диапазоне
-(valuation.range, иначе V в пределах ±15 % от стоимости объекта), PDF ≤ 2 страниц, ≤ 60 с на осмотр; у договоров —
-договор прочитан и сверен (contract_check); у склада 4,2 млрд — ставка не ниже минимума 0,05 %.
-Эталоны — tests/fixtures/live_check_expected.json (снимаются прогоном на текущем коде: --snapshot или если файла
-нет; с датой, коммитом и адресом сервера). Расхождение с эталоном — «вне допуска» с разницей в отчёте.
+Эталоны — tests/fixtures/live_check_expected.json, у каждого осмотра два блока (ТЗ на корректировку 14.10.2026, К4):
+  * snapshot — снимок прошлого прогона (поиск регрессий): ставка ±0,005 п.п. (у комплексного продукта — и каждая
+    часть), стоимость в диапазоне (valuation.range, иначе ±15 % от стоимости объекта), оценка не пропала, договор
+    не перестал читаться. Перезаписывается --snapshot (или первым прогоном, если файла нет);
+  * target — цель из ТЗ, задаётся вручную, --snapshot её не трогает: K1 — V 105–117 млн по аналогам и вывод
+    «страхование сверх страховой стоимости» при S 150 млн; K5, T3 — V по формуле затратного метода (±1 сум, цена
+    1 м² из GET /reference/build-cost); K6 — ставка ≥ 0,05 %; P1–P5 — премия = сумма частей (±1 сум), ставка каждой
+    части ≥ её минимума (GET /reference/product-parts/{код}); D1–D3 — договор прочитан, ≥ 8 из 10 ключевых полей,
+    12 проверок сверки; у всех — PDF ≤ 2 страниц, ≤ 60 с.
+avtoelon.uz недоступен с сервера → K1 получает «нет доступа к источнику» (не «вне допуска»), цель K1 закрывается
+офлайн-тестом К2. Файла эталонов нет (в образ Docker tests/ не входит) — цели берутся из default_targets().
 
-Отчёт: data/reports/live_check_<дата>.md и .json, итог «N из 20 в допуске».
+Отчёт: data/reports/live_check_<дата>.md и .json, итог двумя строками: «цели ТЗ: N из 20» (по ней приёмка) и
+«без регрессий: N из 20»; у каждого осмотра вне допуска — поле, ожидание и факт.
 Telegram: только run(..., telegram=True) внутри сервера (бот app/tgbot.send и send_file, чат TG_OWNER_CHAT_ID из
 окружения; нет переменной — пропуск с пометкой). Из командной строки отчёт в Telegram не уходит: токен бота с
-локальной машины не берётся. Запуск из админки — нужен маршрут (например, POST /admin/live-check), который вызывает
-run(url, telegram=True) в фоновом потоке; в app/main.py его пока нет.
+локальной машины не берётся. Из админки: POST /admin/live-check (app/main.py) — run(url, telegram=True) в фоновом
+потоке, GET /admin/live-check/last — последний отчёт.
 
 Запуск из корня:
     set PYTHONIOENCODING=utf-8
@@ -41,10 +48,11 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import zlib
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -374,6 +382,9 @@ def _act_fields(a: dict, res: dict) -> None:
     res["rate_mode"] = (a.get("rate") or {}).get("mode")
     res["min_pct"] = (a.get("rate") or {}).get("min_pct")
     res["parts"] = part_rates(a)
+    items = (a.get("parts") or {}).get("items") if isinstance(a.get("parts"), dict) else None
+    res["parts_premium"] = [{"class_code": str(x.get("class_code")), "premium": x.get("premium")}
+                            for x in items or []]
     res["premium"] = (a.get("premium") or {}).get("amount")
     res["decision"] = (a.get("decision") or {}).get("code")
     res["risk_level"] = (a.get("risk") or {}).get("level")
@@ -381,10 +392,12 @@ def _act_fields(a: dict, res: dict) -> None:
     res["valuation"] = {k: val.get(k) for k in ("method", "available", "V", "range", "n", "reliability", "reason")} \
         if val else None
     sv = a.get("value_sv") or {}
-    res["value_sv"] = {k: sv.get(k) for k in ("ratio_pct", "verdict", "legal_ref")} if sv else None
+    res["value_sv"] = {k: sv.get(k) for k in ("ratio_pct", "verdict", "label", "legal_ref")} if sv else None
     cc = a.get("contract_check") if isinstance(a.get("contract_check"), dict) else {}
     res["contract_check"] = bool(cc.get("available"))
     res["contract_verdict"] = (cc.get("summary") or {}).get("verdict")
+    res["contract_checks"] = sorted(c.get("no") for c in cc.get("checks") or [] if isinstance(c, dict)
+                                    and isinstance(c.get("no"), int))
 
 
 def run_case(client, case: dict, lang: str = "ru") -> dict:
@@ -401,7 +414,8 @@ def run_case(client, case: dict, lang: str = "ru") -> dict:
             st, v = post_json(client, "/valuation/vehicle", case["vehicle"])
             res["steps"].append(["POST /valuation/vehicle", st])
             if st == 200 and isinstance(v, dict):
-                src = v.get("source") or {}
+                # запасной метод (износ): статус сайта — в analogs_tried.source, а source — «цена нового»
+                src = (v.get("analogs_tried") or {}).get("source") or v.get("source") or {}
                 res["vehicle_valuation"] = {k: v.get(k) for k in ("method", "available", "V", "n", "n_found",
                                                                   "reliability", "fallback_reason", "valuation_id")}
                 res["vehicle_valuation"].update(source_status=src.get("status"), source_reason=src.get("reason"),
@@ -488,25 +502,28 @@ def value_check(res: dict) -> tuple:
 
 
 def evaluate(res: dict, exp: Optional[dict], case: Optional[dict] = None) -> dict:
-    """Проверки одного осмотра: ставка к эталону, части, стоимость, страницы, время, договор, минимум."""
+    """
+    Регрессия к снимку (snapshot): ставка и части ±0,005 п.п., стоимость в диапазоне, оценка не пропала, договор не
+    перестал читаться, PDF ≤ 2 страниц, ≤ 60 с. Цели ТЗ — отдельно, evaluate_target.
+    """
     checks = []
-    case = case or {}
 
-    def add(code, ok, text):
-        checks.append({"code": code, "ok": ok, "text": text})
+    def add(code, ok, text, field, expected, actual):
+        checks.append({"code": code, "ok": ok, "text": text, "field": field, "expected": expected, "actual": actual})
 
     if res.get("error"):
-        add("flow", False, "поток не прошёл: " + res["error"])
+        add("flow", False, "поток не прошёл: " + res["error"], "поток осмотра", "акт и PDF без ошибок", res["error"])
     else:
         r = res.get("rate_pct")
         if exp is None:
-            add("rate", False, "нет эталона ставки (снимите --snapshot)")
+            add("rate", False, "нет эталона ставки (снимите --snapshot)", "ставка, %", "снимок есть", "снимка нет")
         elif r is None or exp.get("rate_pct") is None:
-            add("rate", r is None and exp.get("rate_pct") is None, "ставка %s, эталон %s" % (r, exp.get("rate_pct")))
+            add("rate", r is None and exp.get("rate_pct") is None, "ставка %s, эталон %s" % (r, exp.get("rate_pct")),
+                "ставка, %", exp.get("rate_pct"), r)
         else:
             d = r - float(exp["rate_pct"])
             add("rate", abs(d) <= RATE_TOL_PP + 1e-9, "ставка %.4f %%, эталон %.4f %%, разница %+.4f п.п."
-                % (r, float(exp["rate_pct"]), d))
+                % (r, float(exp["rate_pct"]), d), "ставка, %", "%.4f ± 0,005" % float(exp["rate_pct"]), "%.4f" % r)
         if exp is not None and (exp.get("parts") or res.get("parts")):
             got = {p["class_code"]: p["rate_pct"] for p in res.get("parts") or []}
             want = {p["class_code"]: p["rate_pct"] for p in exp.get("parts") or []}
@@ -514,28 +531,230 @@ def evaluate(res: dict, exp: Optional[dict], case: Optional[dict] = None) -> dic
                    or abs(float(got[c]) - float(want[c])) > RATE_TOL_PP + 1e-9]
             add("parts", not bad, "части: " + ", ".join("кл. %s %s %%" % (c, got.get(c)) for c in sorted(got))
                 + ("" if not bad else " — расходятся с эталоном: " + ", ".join(
-                    "кл. %s %s → %s" % (c, want.get(c), got.get(c)) for c in bad)))
+                    "кл. %s %s → %s" % (c, want.get(c), got.get(c)) for c in bad)),
+                "ставки частей, %", ", ".join("кл. %s %s" % (c, want.get(c)) for c in (bad or sorted(want))),
+                ", ".join("кл. %s %s" % (c, got.get(c)) for c in (bad or sorted(got))))
         ok, text = value_check(res)
         if ok is None and exp is not None and exp.get("valuation_method"):
             ok, text = False, text + "; в эталоне была оценка «%s»" % exp["valuation_method"]
-        add("value", ok, text)
+        v = res.get("valuation") or {}
+        add("value", ok, text, "стоимость V", "в диапазоне оценки или ±15 % от стоимости объекта"
+            + ("; метод «%s»" % exp["valuation_method"] if exp and exp.get("valuation_method") else ""),
+            "метод %s, V %s" % (v.get("method"), _n(v.get("V"))) if v.get("available") else text)
         pg = res.get("pages")
-        add("pages", pg is not None and pg <= MAX_PAGES, "PDF %s стр." % pg)
+        add("pages", pg is not None and pg <= MAX_PAGES, "PDF %s стр." % pg, "PDF, страниц", "≤ %d" % MAX_PAGES, pg)
         for lg, n in (res.get("pages_lang") or {}).items():
-            add("pages_" + lg, n is not None and n <= MAX_PAGES, "PDF %s: %s стр." % (lg.upper(), n))
-        if case.get("min_rate_pct") is not None:
-            m = float(case["min_rate_pct"])
-            add("min_rate", r is not None and r + 1e-9 >= m, "ставка %s %% не ниже минимума %s %%" % (r, m))
-        if case.get("contract"):
-            add("contract", bool(res.get("contract_read")) and bool(res.get("contract_check")),
-                "договор прочитан: %s, сверка в акте: %s" % ("да" if res.get("contract_read") else "нет",
-                                                               "да" if res.get("contract_check") else "нет"))
+            add("pages_" + lg, n is not None and n <= MAX_PAGES, "PDF %s: %s стр." % (lg.upper(), n),
+                "PDF %s, страниц" % lg.upper(), "≤ %d" % MAX_PAGES, n)
+        if exp is not None and exp.get("contract_read"):
+            got = bool(res.get("contract_read"))
+            add("contract", got, "договор прочитан: %s (в снимке — да)" % ("да" if got else "нет"),
+                "договор прочитан", "да (как в снимке)", "да" if got else "нет")
     sec = res.get("seconds")
-    add("time", sec is not None and sec <= MAX_SECONDS, "%s с" % sec)
+    add("time", sec is not None and sec <= MAX_SECONDS, "%s с" % sec, "время осмотра, с", "≤ %d" % MAX_SECONDS, sec)
     status = "в допуске" if all(c["ok"] is not False for c in checks) else "вне допуска"
     if res.get("error"):
         status = "ошибка"
     return {"status": status, "checks": checks}
+
+
+# --------------------------------------------------------------------------- #
+#  Цели ТЗ (target): задаются вручную, --snapshot их не перезаписывает
+# --------------------------------------------------------------------------- #
+
+NO_SOURCE = "нет доступа к источнику"
+# source.status ответа /valuation/vehicle (app/valuation.py), при которых сайт серверу недоступен: не ответил или
+# не отдал robots.txt (адаптер тогда сайт не читает)
+SOURCE_DOWN = ("источник недоступен", "запрещено robots.txt")
+K2_OFFLINE = "tests/test_valuation_tz.py (К2: снимок 19 аналогов Cobalt 2022, V 105–117 млн)"
+TARGET_META = {"source": "ТЗ на корректировку 14.10.2026, К4",
+               "note": "цели задаются вручную; --snapshot их не перезаписывает; приёмка — по строке «цели ТЗ»"}
+COMMON_TARGET = {"pdf_pages_max": MAX_PAGES, "seconds_max": int(MAX_SECONDS)}
+# Затратный метод — ТЗ 13.10.2026, раздел 3: K_констр и T_сл оттуда же; k_wear = 1,00 (индекс в PDF ТЗ не читается,
+# то же значение в настройках valuation.building). Цена 1 м² C берётся с сервера (GET /reference/build-cost).
+COST_TARGET = {"formula": "V = A · C · K_констр · (1 − min(wear_cap; T/T_сл) · k_wear), T = текущий год − год постройки",
+               "k_construction": {"reinforced_concrete": 1.15, "brick": 1.0, "sandwich": 0.7, "adobe": 0.55},
+               "service_life": {"reinforced_concrete": 100, "brick": 80, "metal": 50},
+               "wear_cap": 0.7, "k_wear": 1.0, "tol_sum": 1}
+
+
+def default_targets() -> dict:
+    """Цели ТЗ по осмотрам — то же, что блоки target в файле эталонов (тест следит, чтобы они совпадали)."""
+    t = {c["id"]: dict(COMMON_TARGET) for c in CASES}
+    t["K1"].update(vehicle_method="analogs", vehicle_V_min=105 * M, vehicle_V_max=117 * M, sum_insured=150 * M,
+                   sv_verdict="over", sv_label="страхование сверх страховой стоимости", offline_test=K2_OFFLINE)
+    for k in ("K5", "T3"):
+        t[k]["cost"] = json.loads(json.dumps(COST_TARGET))
+    t["K6"]["rate_min_pct"] = 0.05
+    for k in ("P1", "P2", "P3", "P4", "P5"):
+        t[k].update(premium_sum_of_parts_tol=1, parts_rate_min=True)
+    for k in ("D1", "D2", "D3"):
+        t[k].update(contract_read=True, key_fields_min=8, key_fields_total=10, contract_checks=12)
+    return t
+
+
+def today_tashkent() -> date:
+    return datetime.now(TASHKENT).date()
+
+
+def fetch_refs(client, case: dict, target: Optional[dict]) -> dict:
+    """Справочники для целей с того же сервера: цена 1 м² (затратный метод) и минимумы ставок частей продукта."""
+    ref = {}
+    if not target:
+        return ref
+    body = case.get("body") or {}
+    must, opt = body.get("must") or {}, body.get("optional") or {}
+    if target.get("cost"):
+        q = urllib.parse.urlencode({"region": must.get("region") or "", "building_type": opt.get("object_kind") or ""})
+        st, raw, _h = client.request("GET", "/reference/build-cost?" + q)
+        items = (_json(raw) or {}).get("items") if st == 200 else None
+        day = today_tashkent().isoformat()
+        rows = [r for r in items or [] if isinstance(r, dict) and str(r.get("date") or "") <= day]
+        rows.sort(key=lambda r: (str(r.get("date")), r.get("id") or 0), reverse=True)
+        ref["build_cost_http"], ref["build_cost"] = st, (rows[0] if rows else None)
+    if target.get("parts_rate_min"):
+        q = urllib.parse.urlencode({"client_type": must.get("client_type") or "yur"})
+        st, raw, _h = client.request("GET", "/reference/product-parts/%s?%s" % (
+            urllib.parse.quote(str(must.get("product_code") or "")), q))
+        parts = (_json(raw) or {}).get("parts") if st == 200 else None
+        ref["parts_http"] = st
+        ref["parts_min"] = {str(p.get("class_code")): p.get("min_rate_pct") for p in parts or []
+                            if isinstance(p, dict)} if parts is not None else None
+    return ref
+
+
+def cost_expected(case: dict, cost: dict, row: Optional[dict], today: Optional[date] = None) -> tuple:
+    """(V по формуле ТЗ | None, расшифровка): площадь, материал и год — из осмотра, цена 1 м² — из справочника."""
+    if not row or not isinstance(row.get("price_m2"), (int, float)):
+        return None, "нет строки цены 1 м² в GET /reference/build-cost"
+    opt = (case.get("body") or {}).get("optional") or {}
+    area = (opt.get("class_fields") or {}).get("area_m2")
+    material, year = opt.get("material"), opt.get("year")
+    kc, t_sl = cost["k_construction"].get(material), cost["service_life"].get(material)
+    if not area or kc is None or t_sl is None:
+        return None, "нет площади или материала «%s» в таблице ТЗ" % material
+    today = today or today_tashkent()
+    T = max(0, today.year - int(year)) if year else 0
+    wear = min(float(cost["wear_cap"]), T / float(t_sl)) * float(cost["k_wear"])
+    C = float(row["price_m2"])
+    V = round(float(area) * C * float(kc) * (1 - wear))
+    return V, "%s · %s · %s · (1 − min(%s; %s/%s) · %s) = %s (строка build_cost_m2 №%s от %s)" % (
+        _n(area), _n(C), kc, cost["wear_cap"], T, t_sl, cost["k_wear"], _n(V), row.get("id"), row.get("date"))
+
+
+def source_down(res: dict) -> bool:
+    """avtoelon.uz недоступен серверу: статус «источник недоступен» / «запрещено robots.txt» или HTTP 404."""
+    vv = res.get("vehicle_valuation") or {}
+    return vv.get("source_status") in SOURCE_DOWN or "404" in str(vv.get("source_reason") or "")
+
+
+def evaluate_target(res: dict, target: Optional[dict], case: Optional[dict] = None) -> dict:
+    """
+    Цель ТЗ одного осмотра; каждая проверка — поле, ожидание, факт. «Нет доступа к источнику» — только если не
+    сошлось лишь то, что зависит от avtoelon.uz, а сайт серверу не ответил.
+    """
+    checks = []
+    case = case or {}
+    ref = res.get("ref") or {}
+    notes = []
+
+    def add(field, expected, actual, ok, source=False):
+        checks.append({"field": field, "expected": expected, "actual": actual, "ok": bool(ok), "source": source})
+
+    if not target:
+        add("цель ТЗ", "блок target в файле эталонов", "не задан", False)
+        return {"status": "вне допуска", "checks": checks}
+    if res.get("error"):
+        add("поток осмотра", "акт и PDF без ошибок", res["error"], False)
+    else:
+        mx = target.get("pdf_pages_max")
+        if mx is not None:
+            pg = res.get("pages")
+            add("PDF, страниц", "≤ %s" % mx, pg, pg is not None and pg <= mx)
+            for lg, n in (res.get("pages_lang") or {}).items():
+                add("PDF %s, страниц" % lg.upper(), "≤ %s" % mx, n, n is not None and n <= mx)
+        if target.get("vehicle_V_min") is not None:
+            vv = res.get("vehicle_valuation") or {}
+            V, meth = vv.get("V"), vv.get("method")
+            lo, hi = float(target["vehicle_V_min"]), float(target["vehicle_V_max"])
+            add("V по аналогам avtoelon.uz", "%s–%s сум, метод %s" % (_n(lo), _n(hi), target.get("vehicle_method")),
+                "метод %s, V %s, аналогов %s; источник: %s %s" % (
+                    meth, _n(V), vv.get("n"), vv.get("source_status") or "ответил", vv.get("source_reason") or ""),
+                meth == target.get("vehicle_method") and V is not None and lo <= float(V) <= hi, source=True)
+        if target.get("sv_verdict"):
+            sv = res.get("value_sv") or {}
+            S = (res.get("input") or {}).get("sum_insured")
+            # вывод проверяется по коду verdict; ярлык — только пометкой, пока К1 (термин) не выложен на сервер
+            add("вывод S/V при S %s" % _n(target.get("sum_insured")),
+                "%s — «%s»" % (target["sv_verdict"], target.get("sv_label")),
+                "%s — «%s», S/V %s %%, S %s" % (sv.get("verdict"), sv.get("label") or "—", sv.get("ratio_pct"), _n(S)),
+                sv.get("verdict") == target["sv_verdict"]
+                and (target.get("sum_insured") is None or S == target["sum_insured"]), source=True)
+            if sv.get("label") and target.get("sv_label") and sv["label"] != target["sv_label"]:
+                notes.append("ярлык S/V на сервере «%s», по ТЗ «%s» — закрывается задачей К1; вывод проверен по коду %s"
+                             % (sv["label"], target["sv_label"], sv.get("verdict")))
+        if target.get("cost"):
+            want, how = cost_expected(case, target["cost"], ref.get("build_cost"))
+            v = res.get("valuation") or {}
+            got = v.get("V") if v.get("available") else None
+            tol = float(target["cost"].get("tol_sum", 1))
+            add("V затратным методом", ("%s ± %s сум: %s" % (_n(want), _n(tol), how)) if want is not None else how,
+                "метод %s, V %s" % (v.get("method"), _n(got)),
+                want is not None and got is not None and v.get("method") == "cost" and abs(float(got) - want) <= tol)
+        if target.get("rate_min_pct") is not None:
+            r = res.get("rate_pct")
+            add("ставка, %", "≥ %s" % target["rate_min_pct"], r, r is not None and r + 1e-9 >= target["rate_min_pct"])
+        if target.get("premium_sum_of_parts_tol") is not None:
+            pp = res.get("parts_premium") or []
+            vals = [p.get("premium") for p in pp]
+            total = res.get("premium")
+            ok = len(pp) >= 2 and all(isinstance(x, (int, float)) for x in vals) and isinstance(total, (int, float)) \
+                and abs(float(total) - sum(vals)) <= float(target["premium_sum_of_parts_tol"])
+            add("премия договора, сум", "сумма частей %s ± %s" % (
+                " + ".join(_n(x) for x in vals) or "—", target["premium_sum_of_parts_tol"]), _n(total), ok)
+        if target.get("parts_rate_min"):
+            mins = ref.get("parts_min")
+            if mins is None:
+                add("минимумы частей", "GET /reference/product-parts/{код} — 200", "HTTP %s" % ref.get("parts_http"),
+                    False)
+            elif not res.get("parts"):
+                add("ставки частей", "у каждой части своя ставка", "частей в акте нет", False)
+            else:
+                for p in res["parts"]:
+                    m, r = mins.get(p["class_code"]), p.get("rate_pct")
+                    add("ставка части кл. %s, %%" % p["class_code"],
+                        "≥ %s (справочник частей)" % m if m is not None else "минимум в справочнике не задан",
+                        r, r is not None and (m is None or float(r) + 1e-9 >= float(m)))
+        if target.get("contract_read"):
+            got = bool(res.get("contract_read"))
+            add("договор прочитан", "да", "да" if got else "нет", got)
+            n = res.get("contract_found") or 0
+            add("ключевые поля договора", "≥ %s из %s" % (target["key_fields_min"], target["key_fields_total"]),
+                "%s из %s" % (n, target["key_fields_total"]), got and n >= target["key_fields_min"])
+            nos = res.get("contract_checks") or []
+            need = list(range(1, int(target["contract_checks"]) + 1))
+            add("проверки сверки договора", "%s (№ 1–%s)" % (len(need), need[-1]),
+                "%s%s" % (len(nos), (" (№ " + ", ".join(map(str, nos)) + ")") if nos else ""), nos == need)
+    mx = target.get("seconds_max")
+    if mx is not None:
+        sec = res.get("seconds")
+        add("время осмотра, с", "≤ %s" % mx, sec, sec is not None and sec <= mx)
+    failed = [c for c in checks if not c["ok"]]
+    if res.get("error"):
+        status = "ошибка"
+    elif not failed:
+        status = "в допуске"
+    elif all(c["source"] for c in failed) and source_down(res):
+        status = NO_SOURCE
+    else:
+        status = "вне допуска"
+    if status == NO_SOURCE:
+        notes.insert(0, "avtoelon.uz недоступен с сервера; цель закрыта офлайн-тестом К2: %s" % (
+            target.get("offline_test") or K2_OFFLINE))
+    out = {"status": status, "checks": checks}
+    if notes:
+        out["note"] = "; ".join(notes)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -553,22 +772,48 @@ def _git_commit() -> str:
     return (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "")[:7] or "неизвестно"
 
 
+def fail_lines(r: dict) -> list:
+    """Что не сошлось у осмотра: поле, ожидание, факт — сначала цели ТЗ, потом регрессии к снимку."""
+    out = []
+    for c in (r.get("target_eval") or {}).get("checks") or []:
+        if not c["ok"]:
+            out.append("цель ТЗ · %s: ожидание %s; факт %s" % (c["field"], c["expected"], c["actual"]))
+    for c in (r.get("eval") or {}).get("checks") or []:
+        if c["ok"] is False:
+            out.append("регрессия · %s: ожидание %s; факт %s" % (c.get("field") or c["code"], c.get("expected"),
+                                                                 c.get("actual")))
+    return out
+
+
 def render_md(rep: dict) -> str:
-    L = ["# Проверка вживую: 20 учебных осмотров (ТЗ 13.10.2026, п. 10.1)", "",
-         "Сервер: %s · %s (Ташкент) · коммит %s · эталон: %s" % (rep["url"], rep["date"], rep["commit"],
-                                                                rep["expected"]["note"]), "",
-         "**Итог: %s.**" % rep["summary"], "",
-         "| № | Объект | Продукт | Ставка, % | Премия, сум | Стр. | Сек. | Статус | Что не так |",
+    L = ["# Проверка вживую: 20 учебных осмотров (ТЗ 13.10.2026, п. 10.1; ТЗ на корректировку 14.10.2026, К4)", "",
+         "Сервер: %s · %s (Ташкент) · коммит %s" % (rep["url"], rep["date"], rep["commit"]), "",
+         "Цели (target): %s. Снимок (snapshot): %s." % (rep["expected"]["targets_note"], rep["expected"]["note"]), "",
+         "**%s** — приёмка по этой строке.  " % rep["targets"]["line"],
+         "**%s**" % rep["regress"]["line"], "",
+         "| № | Объект | Продукт | Ставка, % | Премия, сум | Стр. | Сек. | Цель ТЗ | Без регрессий |",
          "|---|---|---|---|---|---|---|---|---|"]
     for r in rep["results"]:
-        bad = "; ".join(c["text"] for c in r["eval"]["checks"] if c["ok"] is False)
         rate = "—" if r.get("rate_pct") is None else ("%.4f" % r["rate_pct"]).replace(".", ",")
         if r.get("parts"):
             rate += " справочно (части: %s)" % ", ".join("кл. %s — %s" % (p["class_code"], p["rate_pct"])
                                                        for p in r["parts"])
         L.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
             r["id"], r["title"], (r.get("input") or {}).get("product_code") or "—", rate, _n(r.get("premium")),
-            r.get("pages") if r.get("pages") is not None else "—", r.get("seconds"), r["eval"]["status"], bad))
+            r.get("pages") if r.get("pages") is not None else "—", r.get("seconds"),
+            (r.get("target_eval") or {}).get("status", "—"), r["eval"]["status"]))
+    L += ["", "## Что не сошлось (поле, ожидание, факт)", ""]
+    bad_any = False
+    for r in rep["results"]:
+        lines, note = fail_lines(r), (r.get("target_eval") or {}).get("note")
+        if not lines and not note:
+            continue
+        bad_any = True
+        L.append("### %s — %s (цель ТЗ: %s; без регрессий: %s)" % (
+            r["id"], r["title"], (r.get("target_eval") or {}).get("status", "—"), r["eval"]["status"]))
+        L += (["- " + note] if note else []) + ["- " + x for x in lines] + [""]
+    if not bad_any:
+        L.append("Всё сошлось.")
     L += ["", "## Стоимость и пометки", ""]
     for r in rep["results"]:
         v = next((c["text"] for c in r["eval"]["checks"] if c["code"] == "value"), "")
@@ -613,9 +858,45 @@ def notify_telegram(rep: dict, md_text: str) -> str:
 
 
 def load_expected(path: Path = EXPECTED) -> Optional[dict]:
+    """
+    Файл эталонов: {"meta", "target_meta", "cases": {id: {"snapshot", "target"}}}. Старый плоский вид (снимок прямо
+    в осмотре) читается как snapshot без цели.
+    """
     if not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    cases = {}
+    for k, v in (data.get("cases") or {}).items():
+        if isinstance(v, dict) and ("snapshot" in v or "target" in v):
+            cases[k] = {"snapshot": v.get("snapshot"), "target": v.get("target")}
+        else:
+            cases[k] = {"snapshot": v, "target": None}
+    data["cases"] = cases
+    return data
+
+
+def write_snapshot(path: Path, results: list, meta: dict, save: bool = True) -> dict:
+    """
+    Новые снимки поверх файла: меняются только блоки snapshot и meta, блоки target остаются как были (цель задаётся
+    вручную). Цель подставляется из default_targets() только туда, где её ещё нет (новый файл, старый формат).
+    Осмотр с ошибкой прежний снимок не затирает.
+    """
+    data = load_expected(path) or {"meta": {}, "target_meta": dict(TARGET_META), "cases": {}}
+    cases = data["cases"]
+    targets = default_targets()
+    for r in results:
+        if not r.get("error"):
+            cases.setdefault(r["id"], {"snapshot": None, "target": None})["snapshot"] = snapshot_of(r)
+    for k, c in cases.items():
+        if c.get("target") is None and k in targets:
+            c["target"] = targets[k]
+    order = [c["id"] for c in CASES if c["id"] in cases] + sorted(k for k in cases if k not in targets)
+    out = {"meta": meta, "target_meta": data.get("target_meta") or dict(TARGET_META),
+           "cases": {k: {"snapshot": cases[k].get("snapshot"), "target": cases[k].get("target")} for k in order}}
+    if save:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    return out
 
 
 def _rel(p: Path) -> str:
@@ -647,19 +928,33 @@ def run(url: str = DEFAULT_URL, *, snapshot: bool = False, save: bool = True, te
         reports_dir: Path = REPORTS, cases: Optional[list] = None, log: Callable = print,
         probe: bool = True) -> dict:
     """
-    Осмотры против сервера url. snapshot — снять эталоны заново (их снимает и первый прогон, если файла нет);
-    client_factory(url) — свой транспорт (тест подставляет ASGI), по умолчанию HttpClient. Возвращает отчёт (dict).
+    Осмотры против сервера url. snapshot — снять снимки заново (их снимает и первый прогон, если файла нет; цели
+    target при этом не меняются); client_factory(url) — свой транспорт (тест подставляет ASGI), по умолчанию
+    HttpClient. Возвращает отчёт (dict): rep["targets"]["line"] — «цели ТЗ: N из M», rep["regress"]["line"] —
+    «без регрессий: N из M».
     """
     cases = [c for c in (cases or CASES) if not only or c["id"] in only]
     make = client_factory or HttpClient
-    expected = None if snapshot else load_expected(expected_path)
-    take = snapshot or expected is None
+    loaded = load_expected(expected_path)
+    take = snapshot or loaded is None
+    if loaded is None:                       # на сервере файла нет: tests/ в образ Docker не входит
+        targets = default_targets()
+        targets_note = "файла эталонов нет — цели из tools/live_check.py (default_targets)"
+    else:
+        targets = {k: v.get("target") for k, v in loaded["cases"].items()}
+        targets_note = "блоки target файла %s (%s)" % (_rel(expected_path),
+                                                     (loaded.get("target_meta") or {}).get("source") or "—")
     now = datetime.now(TASHKENT)
     results = []
     for case in cases:
         client = make(url)                   # у каждого осмотра свой гость: лимиты и акты не смешиваются
         client.request("GET", "/tg/status")  # cookie gid выдаётся заранее, как в мини-аппе
         res = run_case(client, case)
+        try:
+            res["ref"] = fetch_refs(client, case, targets.get(case["id"]))
+        except Exception as e:               # справочник не прочитан — цель не закроется, причина в отчёте
+            res["ref"] = {}
+            res["notes"].append("справочники для цели не получены: %s: %s" % (type(e).__name__, str(e)[:200]))
         results.append(res)
         log("  %s %-62s %s с%s" % (res["id"], res["title"][:62], res.get("seconds"),
                                    ("  ОШИБКА " + res["error"][:120]) if res.get("error") else ""))
@@ -670,30 +965,36 @@ def run(url: str = DEFAULT_URL, *, snapshot: bool = False, save: bool = True, te
         cob = cobalt_probe(client)
     commit = _git_commit()
     if take:
-        snap = {"meta": {"date": now.isoformat(timespec="seconds"), "commit": commit, "url": url,
-                         "note": "эталоны сняты tools/live_check.py на текущем коде сервера; ставка ±0,005 п.п."},
-                "cases": {r["id"]: snapshot_of(r) for r in results if not r.get("error")}}
-        if only:                             # частичный прогон дописывает только свои осмотры
-            merged = dict((load_expected(expected_path) or {}).get("cases") or {})
-            merged.update(snap["cases"])
-            snap["cases"] = merged
-        if save:
-            expected_path.write_text(json.dumps(snap, ensure_ascii=False, indent=1), encoding="utf-8")
-        expected = snap
-    exp_cases = (expected or {}).get("cases") or {}
+        meta = {"date": now.isoformat(timespec="seconds"), "commit": commit, "url": url,
+                "note": "снимки сняты tools/live_check.py на текущем коде сервера; ставка ±0,005 п.п."}
+        data = write_snapshot(expected_path, results, meta, save=save)
+    else:
+        data = loaded
+    exp_cases = data.get("cases") or {}
     by_id = {c["id"]: c for c in cases}
     for r in results:
-        r["eval"] = evaluate(r, exp_cases.get(r["id"]), by_id.get(r["id"]))
-    passed = sum(1 for r in results if r["eval"]["status"] == "в допуске")
-    meta = (expected or {}).get("meta") or {}
-    rep = {"url": url, "date": now.isoformat(timespec="seconds"), "commit": commit, "total": len(results),
-           "passed": passed, "summary": "%d из %d в допуске" % (passed, len(results)),
-           "expected": {"path": _rel(expected_path), "taken_now": take,
+        r["eval"] = evaluate(r, (exp_cases.get(r["id"]) or {}).get("snapshot"), by_id.get(r["id"]))
+        r["target_eval"] = evaluate_target(r, targets.get(r["id"]), by_id.get(r["id"]))
+    n = len(results)
+    closed = sum(1 for r in results if r["target_eval"]["status"] in ("в допуске", NO_SOURCE))
+    no_src = [r["id"] for r in results if r["target_eval"]["status"] == NO_SOURCE]
+    line1 = "цели ТЗ: %d из %d" % (closed, n)
+    if no_src:
+        line1 += " (%s — %s: avtoelon.uz недоступен с сервера, цель закрыта офлайн-тестом К2)" % (
+            ", ".join(no_src), NO_SOURCE)
+    reg = sum(1 for r in results if r["eval"]["status"] == "в допуске")
+    line2 = "без регрессий: %d из %d" % (reg, n)
+    meta = data.get("meta") or {}
+    rep = {"url": url, "date": now.isoformat(timespec="seconds"), "commit": commit, "total": n,
+           "passed": closed, "summary": "%s; %s" % (line1, line2),
+           "targets": {"closed": closed, "total": n, "no_source": no_src, "line": line1},
+           "regress": {"passed": reg, "total": n, "line": line2},
+           "expected": {"path": _rel(expected_path), "taken_now": take, "targets_note": targets_note,
                         "note": "снят этим прогоном" if take else "от %s, коммит %s" % (meta.get("date"),
                                                                                        meta.get("commit"))},
            "results": results, "cobalt": cob}
     rep["telegram"] = notify_telegram(rep, render_md(rep)) if telegram else \
-        "не отправлено: запуск из командной строки (отправку делает сервер — нужен маршрут в админке)"
+        "не отправлено: запуск из командной строки (отправляет сервер: POST /admin/live-check)"
     md = render_md(rep)
     if save:
         reports_dir.mkdir(parents=True, exist_ok=True)
@@ -708,9 +1009,10 @@ def run(url: str = DEFAULT_URL, *, snapshot: bool = False, save: bool = True, te
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="20 учебных осмотров на тестовом сервере (ТЗ 13.10.2026, п. 10.1)")
     ap.add_argument("--url", default=DEFAULT_URL)
-    ap.add_argument("--snapshot", action="store_true", help="снять эталоны заново (перезаписать файл эталонов)")
+    ap.add_argument("--snapshot", action="store_true",
+                    help="снять снимки заново (в файле эталонов меняются только блоки snapshot, цели target — нет)")
     ap.add_argument("--only", default="", help="через запятую: K1,T2,…")
-    ap.add_argument("--no-save", action="store_true", help="не писать отчёт и эталоны")
+    ap.add_argument("--no-save", action="store_true", help="не писать отчёт и снимки")
     a = ap.parse_args(argv)
     only = [x.strip() for x in a.only.split(",") if x.strip()] or None
     print("Проверка вживую:", a.url)
@@ -719,7 +1021,7 @@ def main(argv=None) -> int:
     print(render_md(rep))
     for f in rep.get("files") or []:
         print("файл:", f)
-    return 0 if rep["passed"] == rep["total"] else 1
+    return 0 if rep["targets"]["closed"] == rep["total"] else 1
 
 
 if __name__ == "__main__":

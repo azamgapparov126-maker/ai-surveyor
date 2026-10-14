@@ -185,7 +185,10 @@ ADMIN_METHOD_PATH = {("POST", "/valuation/norms"), ("DELETE", "/valuation/norms"
                      ("POST", "/reference/product-parts/import"), ("POST", "/reference/product-parts/import/apply"),
                      ("PUT", "/reference/actuarial-reports"),
                      # ТЗ 13.10.2026, день 6.2: цена строительства 1 м² (затратный метод) — ручной ввод администратора
-                     ("PUT", "/reference/build-cost")}
+                     ("PUT", "/reference/build-cost"),
+                     # ТЗ на корректировку 14.10.2026, К4: проверка вживую из админки — только администратор
+                     # (дублирует ADMIN_PREFIX «/admin» нарочно: маршрут ходит по серверу 20 осмотрами и пишет в Telegram)
+                     ("POST", "/admin/live-check"), ("GET", "/admin/live-check/last")}
 # то же по началу пути: у удаления нормы износа код в адресе (/valuation/norms/{code}),
 # и точное совпадение из ADMIN_METHOD_PATH его не ловило
 ADMIN_METHOD_PREFIX = {("DELETE", "/valuation/norms/"),

@@ -5,235 +5,423 @@
   "url": "https://ai-surveyor-production.up.railway.app",
   "note": "эталоны сняты tools/live_check.py на текущем коде сервера; ставка ±0,005 п.п."
  },
+ "target_meta": {
+  "source": "ТЗ на корректировку 14.10.2026, К4",
+  "note": "цели задаются вручную; --snapshot их не перезаписывает; приёмка — по строке «цели ТЗ»"
+ },
  "cases": {
   "K1": {
-   "title": "Легковой Chevrolet Cobalt 2022, 3 фото",
-   "rate_pct": 1.0,
-   "parts": [],
-   "premium": 1500000,
-   "valuation_method": "depreciation",
-   "V": 89954304,
-   "contract_read": null
+   "snapshot": {
+    "title": "Легковой Chevrolet Cobalt 2022, 3 фото",
+    "rate_pct": 1.0,
+    "parts": [],
+    "premium": 1500000,
+    "valuation_method": "depreciation",
+    "V": 89954304,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "vehicle_method": "analogs",
+    "vehicle_V_min": 105000000,
+    "vehicle_V_max": 117000000,
+    "sum_insured": 150000000,
+    "sv_verdict": "over",
+    "sv_label": "страхование сверх страховой стоимости",
+    "offline_test": "tests/test_valuation_tz.py (К2: снимок 19 аналогов Cobalt 2022, V 105–117 млн)"
+   }
   },
   "K2": {
-   "title": "Автокран XCMG QY25K 2018",
-   "rate_pct": 0.35,
-   "parts": [],
-   "premium": 2450000,
-   "valuation_method": "depreciation",
-   "V": 719269050,
-   "contract_read": null
+   "snapshot": {
+    "title": "Автокран XCMG QY25K 2018",
+    "rate_pct": 0.35,
+    "parts": [],
+    "premium": 2450000,
+    "valuation_method": "depreciation",
+    "V": 719269050,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60
+   }
   },
   "K3": {
-   "title": "Грузовик Isuzu NPR 2020",
-   "rate_pct": 1.0,
-   "parts": [],
-   "premium": 2500000,
-   "valuation_method": "depreciation",
-   "V": 253311320,
-   "contract_read": null
+   "snapshot": {
+    "title": "Грузовик Isuzu NPR 2020",
+    "rate_pct": 1.0,
+    "parts": [],
+    "premium": 2500000,
+    "valuation_method": "depreciation",
+    "V": 253311320,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60
+   }
   },
   "K4": {
-   "title": "Груз: цемент 400 т (биржа)",
-   "rate_pct": 0.2,
-   "parts": [],
-   "premium": 460000,
-   "valuation_method": "exchange",
-   "V": 212808297,
-   "contract_read": null
+   "snapshot": {
+    "title": "Груз: цемент 400 т (биржа)",
+    "rate_pct": 0.2,
+    "parts": [],
+    "premium": 460000,
+    "valuation_method": "exchange",
+    "V": 212808297,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60
+   }
   },
   "K5": {
-   "title": "Магазин 450 м², кирпич, 2016 (затратная оценка)",
-   "rate_pct": 0.0854,
-   "parts": [],
-   "premium": 2134544,
-   "valuation_method": "cost",
-   "V": 2559375000,
-   "contract_read": null
+   "snapshot": {
+    "title": "Магазин 450 м², кирпич, 2016 (затратная оценка)",
+    "rate_pct": 0.0854,
+    "parts": [],
+    "premium": 2134544,
+    "valuation_method": "cost",
+    "V": 2559375000,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "cost": {
+     "formula": "V = A · C · K_констр · (1 − min(wear_cap; T/T_сл) · k_wear), T = текущий год − год постройки",
+     "k_construction": {
+      "reinforced_concrete": 1.15,
+      "brick": 1.0,
+      "sandwich": 0.7,
+      "adobe": 0.55
+     },
+     "service_life": {
+      "reinforced_concrete": 100,
+      "brick": 80,
+      "metal": 50
+     },
+     "wear_cap": 0.7,
+     "k_wear": 1.0,
+     "tol_sum": 1
+    }
+   }
   },
   "K6": {
-   "title": "Склад 4,2 млрд (контрольный пример, минимум 0,05 %)",
-   "rate_pct": 0.0854,
-   "parts": [],
-   "premium": 3586034,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": null
+   "snapshot": {
+    "title": "Склад 4,2 млрд (контрольный пример, минимум 0,05 %)",
+    "rate_pct": 0.0854,
+    "parts": [],
+    "premium": 3586034,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "rate_min_pct": 0.05
+   }
   },
   "K7": {
-   "title": "Квартира физлица 65 м²",
-   "rate_pct": 0.0854,
-   "parts": [],
-   "premium": 768436,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": null
+   "snapshot": {
+    "title": "Квартира физлица 65 м²",
+    "rate_pct": 0.0854,
+    "parts": [],
+    "premium": 768436,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60
+   }
   },
   "K8": {
-   "title": "Товарные запасы: пшеница 300 т (биржа)",
-   "rate_pct": 0.0907,
-   "parts": [],
-   "premium": 880216,
-   "valuation_method": "exchange",
-   "V": 755392604,
-   "contract_read": null
+   "snapshot": {
+    "title": "Товарные запасы: пшеница 300 т (биржа)",
+    "rate_pct": 0.0907,
+    "parts": [],
+    "premium": 880216,
+    "valuation_method": "exchange",
+    "V": 755392604,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60
+   }
   },
   "P1": {
-   "title": "0305 Комплексное ТС: ТС + НС + ОТВ",
-   "rate_pct": 1.0,
-   "parts": [
-    {
-     "class_code": "3",
-     "rate_pct": 1.1
-    },
-    {
-     "class_code": "1",
-     "rate_pct": 0.5
-    },
-    {
-     "class_code": "13",
-     "rate_pct": 1.0
-    }
-   ],
-   "premium": 2300000,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": null
+   "snapshot": {
+    "title": "0305 Комплексное ТС: ТС + НС + ОТВ",
+    "rate_pct": 1.0,
+    "parts": [
+     {
+      "class_code": "3",
+      "rate_pct": 1.1
+     },
+     {
+      "class_code": "1",
+      "rate_pct": 0.5
+     },
+     {
+      "class_code": "13",
+      "rate_pct": 1.0
+     }
+    ],
+    "premium": 2300000,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "premium_sum_of_parts_tol": 1,
+    "parts_rate_min": true
+   }
   },
   "P2": {
-   "title": "0833 Имущество и ГО физлица: дом + ГО",
-   "rate_pct": 0.1,
-   "parts": [
-    {
-     "class_code": "8",
-     "rate_pct": 0.1
-    },
-    {
-     "class_code": "13",
-     "rate_pct": 0.1
-    }
-   ],
-   "premium": 700000,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": null
+   "snapshot": {
+    "title": "0833 Имущество и ГО физлица: дом + ГО",
+    "rate_pct": 0.1,
+    "parts": [
+     {
+      "class_code": "8",
+      "rate_pct": 0.1
+     },
+     {
+      "class_code": "13",
+      "rate_pct": 0.1
+     }
+    ],
+    "premium": 700000,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "premium_sum_of_parts_tol": 1,
+    "parts_rate_min": true
+   }
   },
   "P3": {
-   "title": "0312 Автокредит: залог ТС + фин. риск (необеспеченная часть)",
-   "rate_pct": 0.6525,
-   "parts": [
-    {
-     "class_code": "3",
-     "rate_pct": 0.5
-    },
-    {
-     "class_code": "14",
-     "rate_pct": 1.4148
-    }
-   ],
-   "premium": 1565930,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": null
+   "snapshot": {
+    "title": "0312 Автокредит: залог ТС + фин. риск (необеспеченная часть)",
+    "rate_pct": 0.6525,
+    "parts": [
+     {
+      "class_code": "3",
+      "rate_pct": 0.5
+     },
+     {
+      "class_code": "14",
+      "rate_pct": 1.4148
+     }
+    ],
+    "premium": 1565930,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "premium_sum_of_parts_tol": 1,
+    "parts_rate_min": true
+   }
   },
   "P4": {
-   "title": "0805 Ипотека: квартира + НС",
-   "rate_pct": 0.1759,
-   "parts": [
-    {
-     "class_code": "8",
-     "rate_pct": 0.0949
-    },
-    {
-     "class_code": "1",
-     "rate_pct": 0.5
-    }
-   ],
-   "premium": 1758949,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": null
+   "snapshot": {
+    "title": "0805 Ипотека: квартира + НС",
+    "rate_pct": 0.1759,
+    "parts": [
+     {
+      "class_code": "8",
+      "rate_pct": 0.0949
+     },
+     {
+      "class_code": "1",
+      "rate_pct": 0.5
+     }
+    ],
+    "premium": 1758949,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "premium_sum_of_parts_tol": 1,
+    "parts_rate_min": true
+   }
   },
   "P5": {
-   "title": "0825 Имущество + общая ГО: офис + ГО",
-   "rate_pct": 0.1667,
-   "parts": [
-    {
-     "class_code": "8",
-     "rate_pct": 0.1
-    },
-    {
-     "class_code": "13",
-     "rate_pct": 0.5
-    }
-   ],
-   "premium": 3000000,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": null
+   "snapshot": {
+    "title": "0825 Имущество + общая ГО: офис + ГО",
+    "rate_pct": 0.1667,
+    "parts": [
+     {
+      "class_code": "8",
+      "rate_pct": 0.1
+     },
+     {
+      "class_code": "13",
+      "rate_pct": 0.5
+     }
+    ],
+    "premium": 3000000,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "premium_sum_of_parts_tol": 1,
+    "parts_rate_min": true
+   }
   },
   "T1": {
-   "title": "0301 Легковой в залоге, повреждения, 2 фото",
-   "rate_pct": 0.6,
-   "parts": [],
-   "premium": 1140000,
-   "valuation_method": "depreciation",
-   "V": 191902515,
-   "contract_read": null
+   "snapshot": {
+    "title": "0301 Легковой в залоге, повреждения, 2 фото",
+    "rate_pct": 0.6,
+    "parts": [],
+    "premium": 1140000,
+    "valuation_method": "depreciation",
+    "V": 191902515,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60
+   }
   },
   "T2": {
-   "title": "0318 Автокран 2019, стройплощадка, 6 500 моточасов",
-   "rate_pct": 0.35,
-   "parts": [],
-   "premium": 1960000,
-   "valuation_method": "depreciation",
-   "V": 557284904,
-   "contract_read": null
+   "snapshot": {
+    "title": "0318 Автокран 2019, стройплощадка, 6 500 моточасов",
+    "rate_pct": 0.35,
+    "parts": [],
+    "premium": 1960000,
+    "valuation_method": "depreciation",
+    "V": 557284904,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60
+   }
   },
   "T3": {
-   "title": "0821 Магазин 450 м², 2 этажа, износ 15 %",
-   "rate_pct": 0.25,
-   "parts": [],
-   "premium": 6000000,
-   "valuation_method": "cost",
-   "V": 2559375000,
-   "contract_read": null
+   "snapshot": {
+    "title": "0821 Магазин 450 м², 2 этажа, износ 15 %",
+    "rate_pct": 0.25,
+    "parts": [],
+    "premium": 6000000,
+    "valuation_method": "cost",
+    "V": 2559375000,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "cost": {
+     "formula": "V = A · C · K_констр · (1 − min(wear_cap; T/T_сл) · k_wear), T = текущий год − год постройки",
+     "k_construction": {
+      "reinforced_concrete": 1.15,
+      "brick": 1.0,
+      "sandwich": 0.7,
+      "adobe": 0.55
+     },
+     "service_life": {
+      "reinforced_concrete": 100,
+      "brick": 80,
+      "metal": 50
+     },
+     "wear_cap": 0.7,
+     "k_wear": 1.0,
+     "tol_sum": 1
+    }
+   }
   },
   "T4": {
-   "title": "0701 Груз: дизельное топливо 120 т",
-   "rate_pct": 0.2,
-   "parts": [],
-   "premium": 4060000,
-   "valuation_method": "exchange",
-   "V": 1248134959,
-   "contract_read": null
+   "snapshot": {
+    "title": "0701 Груз: дизельное топливо 120 т",
+    "rate_pct": 0.2,
+    "parts": [],
+    "premium": 4060000,
+    "valuation_method": "exchange",
+    "V": 1248134959,
+    "contract_read": null
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60
+   }
   },
   "D1": {
-   "title": "Договор DOCX: огонь, 0807",
-   "rate_pct": 0.0854,
-   "parts": [],
-   "premium": 2049163,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": true
+   "snapshot": {
+    "title": "Договор DOCX: огонь, 0807",
+    "rate_pct": 0.0854,
+    "parts": [],
+    "premium": 2049163,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": true
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "contract_read": true,
+    "key_fields_min": 8,
+    "key_fields_total": 10,
+    "contract_checks": 12
+   }
   },
   "D2": {
-   "title": "Договор PDF с текстом: залог, 0801",
-   "rate_pct": 0.0854,
-   "parts": [],
-   "premium": 1536872,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": true
+   "snapshot": {
+    "title": "Договор PDF с текстом: залог, 0801",
+    "rate_pct": 0.0854,
+    "parts": [],
+    "premium": 1536872,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": true
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "contract_read": true,
+    "key_fields_min": 8,
+    "key_fields_total": 10,
+    "contract_checks": 12
+   }
   },
   "D3": {
-   "title": "Договор-скан (PDF без текста): ущерб, 0808",
-   "rate_pct": 0.0907,
-   "parts": [],
-   "premium": 816695,
-   "valuation_method": null,
-   "V": null,
-   "contract_read": false
+   "snapshot": {
+    "title": "Договор-скан (PDF без текста): ущерб, 0808",
+    "rate_pct": 0.0907,
+    "parts": [],
+    "premium": 816695,
+    "valuation_method": null,
+    "V": null,
+    "contract_read": false
+   },
+   "target": {
+    "pdf_pages_max": 2,
+    "seconds_max": 60,
+    "contract_read": true,
+    "key_fields_min": 8,
+    "key_fields_total": 10,
+    "contract_checks": 12
+   }
   }
  }
 }

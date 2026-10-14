@@ -31,6 +31,7 @@
   POST /tg/webhook/{secret}             — обновления от бота Telegram (app/tgbot.py)
   GET  /tg/me, /tg/inbox, /tg/my-requests, /tg/bot-status — данные для мини-приложения
   GET  /ui — экран агента, GET /admin — админка (то же /admin/hub), GET /admin/deploy — запуск, GET /tg — мини-апп
+  POST /admin/live-check — проверка вживую (20 осмотров в фоне), GET /admin/live-check/last — последний отчёт
 
 Доступ: всё, кроме белого списка (/health, /login, /auth/*, /tg…, /theme.js), требует сессии —
 единый вход app/guard.py. Разделы админа (/admin*, /deploy/*, /tasks*, /reports*, /audit) — только «админ».
@@ -1199,6 +1200,96 @@ for _mod, _name in (("portfolio", "portfolio_router"), ("proposal", "proposal_ro
         app.include_router(_m.router)
     except Exception as _e:  # модуль ещё не готов — сервер всё равно поднимается
         print(f"модуль {_mod} не подключён: {_e}")
+
+
+# ---------- Проверка вживую из админки (ТЗ на корректировку 14.10.2026, К4) ----------
+# Сервер работает одним процессом (--workers 1), поэтому замка в памяти достаточно: пока идёт прогон, второй
+# запуск получает 409. Прогон — 20 учебных осмотров через публичный адрес самого сервера (гостем, как мини-апп).
+_live_lock = threading.Lock()
+_live_state = {"running": False, "started_at": None, "finished_at": None, "url": None, "by": None,
+               "summary": None, "error": None, "telegram": None}
+_live_threads: list = []
+
+
+def _live_check_module():
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from tools import live_check
+    return live_check
+
+
+def _self_url(request: Request) -> str:
+    """Адрес самого сервера: SERVER_URL (настройки или окружение), иначе — из запроса (за прокси — X-Forwarded-Proto)."""
+    from . import llm
+    url = (llm.get("SERVER_URL", "") or "").strip().rstrip("/")
+    if url.startswith(("http://", "https://")):
+        return url
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "http").split(",")[0].strip()
+    host = (request.headers.get("host") or request.url.netloc).strip()
+    return "%s://%s" % (proto if proto in ("http", "https") else "http", host)
+
+
+def _live_job(url: str, lc, who: str):
+    try:
+        rep = lc.run(url, telegram=True, reports_dir=lc.REPORTS, expected_path=lc.EXPECTED,
+                     log=lambda *a, **k: None)
+        _live_state.update(summary=rep.get("summary"), telegram=rep.get("telegram"))
+    except Exception as e:                  # ошибка прогона — в журнал сервера и в журнал действий
+        _live_state["error"] = "%s: %s" % (type(e).__name__, str(e)[:300])
+        print("проверка вживую: прогон упал —", _live_state["error"])
+        try:
+            with db.tx() as con:
+                db.audit(con, who, "проверка вживую: ошибка", "live_check", {"error": _live_state["error"]})
+        except Exception as e2:
+            print("проверка вживую: журнал не записан —", type(e2).__name__)
+    finally:
+        _live_state.update(running=False, finished_at=db.now())
+        _live_lock.release()
+
+
+@app.post("/admin/live-check", status_code=202)
+def live_check_start(request: Request, user: dict = Depends(require(ADMIN))):
+    """20 учебных осмотров на этом сервере в фоне; отчёт — в data/reports и владельцу в Telegram."""
+    if not _live_lock.acquire(blocking=False):
+        raise HTTPException(409, "проверка вживую уже идёт (запущена %s)" % _live_state.get("started_at"))
+    try:
+        lc = _live_check_module()
+        url = _self_url(request)
+        who = user.get("login") or ADMIN
+        _live_state.update(running=True, started_at=db.now(), finished_at=None, url=url, by=who, summary=None,
+                           error=None, telegram=None)
+        with db.tx() as con:
+            db.audit(con, who, "проверка вживую запущена", "live_check", {"url": url})
+        t = threading.Thread(target=_live_job, args=(url, lc, who), name="live-check", daemon=True)
+        _live_threads[:] = [t]
+        t.start()
+    except Exception:
+        _live_state["running"] = False
+        _live_lock.release()
+        raise
+    return {"ok": True, "started": True, "url": url, "started_at": _live_state["started_at"],
+            "note": "20 осмотров идут в фоне; итог — GET /admin/live-check/last"}
+
+
+@app.get("/admin/live-check/last")
+def live_check_last(user: dict = Depends(require(ADMIN))):
+    """Последний отчёт проверки вживую из data/reports (md и json) и состояние текущего прогона."""
+    lc = _live_check_module()
+    d = Path(lc.REPORTS)
+    files = sorted(d.glob("live_check_*.json"), key=lambda p: p.stat().st_mtime) if d.is_dir() else []
+    state = {k: v for k, v in _live_state.items()}
+    if not files:
+        raise HTTPException(404, "отчёта проверки вживую ещё нет" + (" — прогон идёт" if state["running"] else ""))
+    js = files[-1]
+    md = js.with_suffix(".md")
+    try:
+        rep = json.loads(js.read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise HTTPException(500, "отчёт %s не читается: %s" % (js.name, e))
+    return {"ok": True, "state": state, "file_json": js.name, "file_md": md.name if md.exists() else None,
+            "date": rep.get("date"), "url": rep.get("url"), "summary": rep.get("summary"),
+            "targets": rep.get("targets"), "regress": rep.get("regress"), "telegram": rep.get("telegram"),
+            "md": md.read_text(encoding="utf-8") if md.exists() else None, "report": rep}
 
 
 # Вход через Google (app/google_auth.py): подключаем рядом с остальными входами.
