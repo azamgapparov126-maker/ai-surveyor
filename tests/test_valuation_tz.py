@@ -178,7 +178,8 @@ def check_cobalt():
        and r["n_cut"] == 1 and r["n_found"] == 20, {k: r.get(k) for k in ("method", "n", "n_cut", "n_found")})
     ok("отсечён 5 000 у.е.", [c["price"] for c in r["cut"]] == [5000.0] and r["cut"][0]["currency"] == "USD",
        r["cut"])
-    # руками: цены 19 аналогов в сумах → медиана × 0,95 × 0,88 (пробег и состояние не указаны — K = 1)
+    # руками: цены 19 аналогов 2022 года в сумах → медиана × 0,95 × 0,88^0 (Δ = 0: тот же год, ТЗ 14.10.2026 К2;
+    # пробег и состояние не указаны — K = 1)
     prices = [a["price_uzs"] for a in r["analogs"]]
     all_p = prices + [5000.0 * RATE]
     q1, q3 = hand_q(all_p, 0.25), hand_q(all_p, 0.75)
@@ -187,10 +188,16 @@ def check_cobalt():
        r["bounds"])
     ok("все аналоги 2022 года, свежее 6 месяцев",
        all(a["year"] == 2022 for a in r["analogs"]) and all(a["published"] >= "2026-04-13" for a in r["analogs"]))
-    v_hand = round(hand_q([p * 0.95 * 0.88 for p in prices], 0.5))
-    ok("V = median(P × 0,95 × 0,88) — руками", r["V"] == v_hand, (r["V"], v_hand))
-    a1, a3 = hand_q([p * 0.836 for p in prices], 0.25), hand_q([p * 0.836 for p in prices], 0.75)
-    rel_pct = round((a3 - a1) / hand_q([p * 0.836 for p in prices], 0.5) * 100, 1)
+    v_hand = round(hand_q([p * 0.95 * 0.88 ** 0 for p in prices], 0.5))
+    ok("V = median(P × 0,95 × 0,88^Δ), Δ = 0 — руками; 105–117 млн", r["V"] == v_hand
+       and 105_000_000 <= r["V"] <= 117_000_000, (r["V"], v_hand))
+    ok("k_age и Δ по каждому аналогу в act_json.valuation.k и в пояснении",
+       r["k"]["k_age"] == 0.88 and "k_market" not in r["k"] and len(r["k"]["age"]) == 19
+       and all(x["delta"] == 0 and x["k_age"] == 1.0 for x in r["k"]["age"])
+       and all(a["delta"] == 0 and a["k_age"] == 1.0 for a in r["analogs"])
+       and any("Δ = 0" in st and "k_age = 0,88" in st for st in r["steps"]), (r["k"], r["steps"]))
+    a1, a3 = hand_q([p * 0.95 for p in prices], 0.25), hand_q([p * 0.95 for p in prices], 0.75)
+    rel_pct = round((a3 - a1) / hand_q([p * 0.95 for p in prices], 0.5) * 100, 1)
     lvl = "high" if rel_pct <= 15 else "medium" if rel_pct <= 30 else "low"
     ok("надёжность (Q3 − Q1)/V и уровень", r["reliability_pct"] == rel_pct and r["reliability"] == lvl,
        (r["reliability_pct"], r["reliability"], rel_pct))
@@ -212,7 +219,7 @@ def check_cobalt():
     k = 1 - 0.15 * (120_000 / (20_000 * 4) - 1)
     ok("K_пробег = clip(1 − 0,15·(120 000/80 000 − 1)) = 0,925; K_сост «worn» = 0,95",
        abs(r2["k"]["mileage"]["k"] - 0.925) < 1e-9 and r2["k"]["condition"]["k"] == 0.95
-       and r2["V"] == round(hand_q([p * 0.95 * 0.88 * k * 0.95 for p in prices], 0.5)), r2["k"])
+       and r2["V"] == round(hand_q([p * 0.95 * k * 0.95 for p in prices], 0.5)), r2["k"])
     km = V.k_mileage(0, "km", 4, V.val_settings(None, {}))
     km2 = V.k_mileage(400_000, "km", 4, V.val_settings(None, {}))
     eh = V.k_mileage(3_000, "hours", 4, V.val_settings(None, {}))
@@ -270,7 +277,9 @@ def check_sv(res):
        and sv["ratio_pct"] == round(150_000_000 / Vv * 100, 2) and "938" in sv["text"], sv)
     ok("в акте act_json.valuation — метод analogs и формула",
        a["valuation"]["method"] == "analogs" and a["valuation"]["V"] == Vv and a["valuation"]["formula"]
-       and a["valuation"]["valuation_id"] == vid, a["valuation"])
+       and a["valuation"]["valuation_id"] == vid
+       and a["valuation"]["k"]["k_age"] == 0.88 and len(a["valuation"]["k"]["age"]) == a["valuation"]["n"],
+       a["valuation"])
     ok("кнопки решения", sv["actions"] == ["accept_market", "keep_with_note"])
     p_before = a["premium"]["amount"]
     st, b = call("POST", f"/act/{a['id']}/value-decision", {"accept_market": False})
@@ -516,7 +525,7 @@ def check_settings():
     print("7. Константы — act_settings.valuation с версией и датой")
     d = ae.DEFAULT_SETTINGS["valuation"]
     ok("версия и дата", d["version"] == "1.0" and d["date"] == "2026-10-13" and d["calibrated"] == 0)
-    ok("числа раздела 3", d["vehicle"]["bargain"] == 0.95 and d["vehicle"]["k_market"] == 0.88
+    ok("числа раздела 3", d["vehicle"]["bargain"] == 0.95 and d["vehicle"]["k_age"] == 0.88 and "k_market" not in d["vehicle"]
        and d["vehicle"]["mileage_norm_km"] == 20000 and d["vehicle"]["engine_hours_norm"] == 1500
        and d["vehicle"]["k_condition"]["worn"] == 0.95 and d["vehicle"]["k_condition"]["damaged"] == 0.80
        and d["depreciation"] == {"first_year_pct": 20, "next_years_pct": 12, "floor_pct": 15}
@@ -545,6 +554,93 @@ def check_sv_terms():
        "страхование сверх страховой стоимости" in w["text"] and "перестрах" not in w["text"], w)
     ok("uz/en не тронуты", "qiymatdan ortiq" in over["text"]["uz"] and "over-insurance" in over["text"]["en"], over)
 
+# ------------------------------------------------------------------ 9. Поправка на возраст аналога (ТЗ 14.10.2026, К2)
+
+FIXTURE_JSON = ROOT / "tests" / "fixtures" / "avtoelon_cobalt_2022.json"
+
+
+def check_k_age():
+    print("9. К2: V = median(P · 0,95 · k_age^Δ · K_пробег · K_сост), Δ = год аналога − год объекта")
+    vs_ = V.val_settings(None, {})
+    snap = _json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
+    an = snap["analogs"]
+    ok("снимок: 20 разобранных аналогов Cobalt 2022, все с годом и ценой в сумах",
+       len(an) == 20 and all(a["year"] == 2022 and a["price_uzs"] for a in an), len(an))
+    r = V.analog_value(an, as_of=TODAY, year=2022, sum_insured=150_000_000, vs_=vs_)
+    ok("Cobalt 2022 офлайн: 19 аналогов, V в 105–117 млн (≈ 108 млн = 95,4 / 0,88)",
+       r["available"] and r["n"] == 19 and 105_000_000 <= r["V"] <= 117_000_000
+       and abs(r["V"] - 108_434_815) <= 1, (r.get("n"), r.get("V")))
+    sv = V.sv_check(150_000_000, r["V"], vs_)
+    ok("S 150 млн к V ≈ 108 млн — 138 %%, страхование сверх страховой стоимости (ГК ст. 938)",
+       sv["verdict"] == "over" and round(sv["ratio_pct"]) == 138 and "ГК ст. 938" in sv["text"]["ru"], sv)
+    k = V.k_age_of(2020, 2022, 0.88)
+    ok("аналог 2020 для объекта 2022: Δ = −2, k = 0,88⁻² = 1,2913",
+       k["delta"] == -2 and round(k["k"], 4) == 1.2913 and abs(k["k"] - 1 / 0.88 ** 2) < 1e-12, k)
+    ok("тот же год — k = 1; аналог новее на год — 0,88", V.k_age_of(2022, 2022, 0.88)["k"] == 1.0
+       and V.k_age_of(2023, 2022, 0.88)["k"] == 0.88)
+    ok("нет года у аналога — None (в оценку не идёт)", V.k_age_of(None, 2022, 0.88) is None)
+    base = [dict(a) for a in an[:4]]
+    old = dict(base[0], year=2020, url="https://avtoelon.uz/a/show/test-2020")
+    noyear = dict(base[1], year=None, url="https://avtoelon.uz/a/show/test-noyear")
+    r2 = V.analog_value(base + [old, noyear], as_of=TODAY, year=2022, vs_=vs_)
+    a20 = next(a for a in r2["analogs"] if a["year"] == 2020)
+    ok("аналог 2020 в расчёте: цена × 1,2913, Δ = −2 в act_json.valuation.k и в пояснении",
+       a20["delta"] == -2 and a20["k_age"] == 1.2913
+       and any(x["delta"] == -2 and x["k_age"] == 1.2913 for x in r2["k"]["age"])
+       and any("Δ = -2" in st and "0,88^-2 = 1,2913" in st for st in r2["steps"]), (a20, r2["steps"]))
+    adj = sorted([float(a["price_uzs"]) for a in base] + [float(old["price_uzs"]) / 0.88 ** 2])
+    ok("V = median(P_i · 0,95 · 0,88^Δ_i) — руками", r2["V"] == round(hand_q([p * 0.95 for p in adj], 0.5)),
+       (r2["V"], adj))
+    ok("аналог без года — в cut с причиной", any(c["code"] == "no_year" and "нет года" in c["reason"]
+                                                   and c["url"].endswith("noyear") for c in r2["cut"]), r2["cut"])
+    # старые настройки с k_market: ключ игнорируется, проверка не падает
+    old_s = {"valuation": {"vehicle": {"k_market": 0.9, "bargain": 0.95}}}
+    ok("старый ключ vehicle.k_market игнорируется: проверка без ошибок, k_age = 0,88",
+       ae.check_settings(old_s) == [] and "k_market" not in V.val_settings(None, old_s)["vehicle"]
+       and V.val_settings(None, old_s)["vehicle"]["k_age"] == 0.88
+       and old_s["valuation"]["vehicle"]["k_market"] == 0.9, ae.check_settings(old_s))
+    errs = ae.check_settings({"valuation": {"vehicle": {"k_age": 1.1}}})
+    ok("k_age вне 0,5–1,0 — ошибка", any("k_age" in e and "1.0" in e for e in errs)
+       and ae.check_settings({"valuation": {"vehicle": {"k_age": 0.5}}}) == [], errs)
+    # поиск: год объекта → ± 1 → ± 2, адреса только ?year[from]= и &page=
+    calls, saved = [], vs.fetch_avtoelon_analogs
+
+    def fake(brand, model, year, as_of, rate, **kw):
+        calls.append((kw.get("year_from"), kw.get("year_tolerance")))
+        url = vs.analog_url(brand, model, kw.get("year_from"), 1)
+        rows = [dict(a) for a in an[:2]]                          # 2 аналога года объекта — мало
+        if kw.get("year_tolerance") >= 1:
+            rows += [dict(a, year=2021, price_uzs=round(a["price_uzs"] * 0.88), url=a["url"] + "-2021")
+                     for a in an[:2]]          # год назад, цена ниже на 12 %: после k_age — как у 2022
+        return {"status": vs.STATUS_OK, "analogs": rows, "urls": [url], "reason": ""}
+    vs.fetch_avtoelon_analogs = fake
+    try:
+        with db.tx() as con:
+            r3 = V.vehicle_valuation(con, brand="Chevrolet", model="Cobalt", year=2022, as_of=TODAY, fx=dict(FX))
+    finally:
+        vs.fetch_avtoelon_analogs = saved
+    ok("меньше 3 аналогов года объекта — поиск год ± 1 (?year[from]=2021), с k_age",
+       calls == [(2022, 0), (2021, 1)] and r3["available"] and r3["n"] == 4
+       and [s_["tolerance"] for s_ in r3["search"]] == [0, 1]
+       and r3["search"][1]["url"] == "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2021"
+       and sorted(x["delta"] for x in r3["k"]["age"]) == [-1, -1, 0, 0]
+       and "Поиск аналогов" in r3["steps"][0], (calls, r3.get("search"), r3.get("reason")))
+    calls.clear()
+    vs.fetch_avtoelon_analogs = lambda *a, **kw: (calls.append((kw.get("year_from"), kw.get("year_tolerance")))
+                                                  or {"status": vs.STATUS_OK, "analogs": [dict(an[0])],
+                                                      "urls": [vs.analog_url("Chevrolet", "Cobalt",
+                                                                             kw.get("year_from"), 1)]})
+    try:
+        with db.tx() as con:
+            r4 = V.vehicle_valuation(con, brand="Chevrolet", model="Cobalt", year=2022, as_of=TODAY, fx=dict(FX))
+    finally:
+        vs.fetch_avtoelon_analogs = saved
+    ok("и при ± 1 мало — год ± 2 (?year[from]=2020); дальше не расширяем",
+       calls == [(2022, 0), (2021, 1), (2020, 2)] and not r4["available"], (calls, r4.get("reason")))
+    u = vs.analog_url("Chevrolet", "Cobalt", 2020, 2)
+    ok("адрес ± 2: только year%5Bfrom%5D и page", u == "https://avtoelon.uz/avto/chevrolet/cobalt/"
+       "?year%5Bfrom%5D=2020&page=2" and vs.query_ok(u), u)
+
 
 def main():
     llm_post, http_get = llm._post, vs._http_get
@@ -565,6 +661,7 @@ def main():
             check_cost()
             check_settings()
             check_sv_terms()
+            check_k_age()
     finally:
         llm._post, vs._http_get = llm_post, http_get
     print("\nитог: ок %d, плохо %d" % (passed, failed))

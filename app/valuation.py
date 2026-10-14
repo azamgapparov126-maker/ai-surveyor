@@ -1512,37 +1512,73 @@ def sv_warning(S: Optional[float], V: Optional[float], vs_: dict) -> Optional[di
                 else "недострахование, выплата пропорционально (ГК ст. 936)")}
 
 
+def k_age_of(analog_year, object_year, k_age: float) -> Optional[dict]:
+    """
+    Поправка на возраст аналога (ТЗ 14.10.2026, К2): k = k_age ** Δ, Δ = год аналога − год объекта.
+    Тот же год — 1; аналог на 2 года старше объекта (Δ = −2) — 0,88⁻² = 1,2913 (цена делится на 0,88²).
+    Нет года у аналога — None (аналог в оценку не идёт). Нет года объекта — Δ не определена: k = 1.
+    """
+    try:
+        ay = int(analog_year)
+    except (TypeError, ValueError):
+        return None
+    try:
+        oy = int(object_year)
+    except (TypeError, ValueError):
+        return {"year": ay, "delta": None, "k": 1.0}
+    d = ay - oy
+    return {"year": ay, "delta": d, "k": float(k_age) ** d}
+
+
+def _cut_row(a: dict, reason: str, code: str) -> dict:
+    return {"price": a.get("price"), "currency": a.get("currency"), "price_uzs": a.get("price_uzs"),
+            "year": a.get("year"), "url": a.get("url"), "code": code, "reason": reason}
+
+
 def analog_value(analogs: list, *, as_of=None, year=None, mileage=None, mileage_unit: Optional[str] = None,
                  condition: Optional[str] = None, sum_insured: Optional[float] = None, vs_: dict,
                  source: Optional[dict] = None, fx: Optional[dict] = None) -> dict:
     """
-    V = median(P × bargain × k_market × K_пробег × K_сост) по аналогам без выбросов (IQR). P — цена объявления в сумах.
-    Меньше min_analogs аналогов — available = false (нужен запасной метод). Надёжность — (Q3 − Q1)/V.
+    V = median(P_i × bargain × k_age^Δ_i × K_пробег × K_сост) по аналогам без выбросов (IQR), Δ_i = год аналога − год
+    объекта (ТЗ 14.10.2026, К2). P — цена объявления в сумах. Аналог без года в оценку не идёт (причина в cut).
+    Выбросы ищутся по цене, приведённой к году объекта (P × k_age^Δ). Меньше min_analogs аналогов — available = false
+    (нужен запасной метод). Надёжность — (Q3 − Q1)/V.
     """
     v = vs_["vehicle"]
+    k_age = float(v["k_age"])
     as_of = to_date(as_of) or date.today()
     priced = [a for a in analogs if a.get("price_uzs")]
     no_uzs = len(analogs) - len(priced)
-    flt = iqr_filter([float(a["price_uzs"]) for a in priced], float(v["iqr_k"]))
-    kept_set = list(flt["kept"])
-    kept, cut = [], []
+    cut, dated = [], []
     for a in priced:
-        p = float(a["price_uzs"])
-        if p in kept_set:
-            kept_set.remove(p)
-            kept.append(a)
+        ka = k_age_of(a.get("year"), year, k_age)
+        if ka is None:
+            cut.append(_cut_row(a, "нет года выпуска у аналога — поправку на возраст посчитать нельзя", "no_year"))
         else:
-            cut.append(a)
+            dated.append((a, ka))
+    flt = iqr_filter([float(a["price_uzs"]) * ka["k"] for a, ka in dated], float(v["iqr_k"]))
+    kept_set = list(flt["kept"])
+    kept = []
+    for a, ka in dated:
+        pa = float(a["price_uzs"]) * ka["k"]
+        if pa in kept_set:
+            kept_set.remove(pa)
+            kept.append((a, ka))
+        else:
+            cut.append(_cut_row(a, "выброс: цена с поправкой на возраст %s сум вне [%s; %s]" % (
+                _fmt(pa), _fmt(flt["low"]), _fmt(flt["high"])), "outlier"))
     years = vehicle_years(year, as_of)
     km = k_mileage(mileage, mileage_unit, years, vs_)
     kc = k_condition(condition, vs_)
-    mult = float(v["bargain"]) * float(v["k_market"]) * km["k"] * kc["k"]
-    adj = [float(a["price_uzs"]) * mult for a in kept]
+    mult = float(v["bargain"]) * km["k"] * kc["k"]
+    age_adj = [float(a["price_uzs"]) * ka["k"] for a, ka in kept]
+    adj = [p * mult for p in age_adj]
+    age_rows = [{"year": ka["year"], "delta": ka["delta"], "k_age": round(ka["k"], 4), "url": a.get("url")}
+                for a, ka in kept]
     base = {"method": "analogs", "available": False, "n": len(kept), "n_found": len(analogs),
             "n_cut": len(cut), "currency": "UZS", "date": as_of.isoformat(), "settings": _settings_tag(vs_),
             "source": source or {"name": "avtoelon.uz"}, "fx": fx, "calibrated": 0, "warnings": [],
-            "cut": [{"price": a.get("price"), "currency": a.get("currency"), "price_uzs": a.get("price_uzs"),
-                     "url": a.get("url")} for a in cut],
+            "cut": cut,
             "bounds": {"low": round(flt["low"]) if flt["low"] is not None else None,
                        "high": round(flt["high"]) if flt["high"] is not None else None}}
     if no_uzs:
@@ -1554,18 +1590,32 @@ def analog_value(analogs: list, *, as_of=None, year=None, mileage=None, mileage_
     q1, med, q3 = quantiles(adj)
     V = round(med)
     rel, rel_pct = reliability_of(q1, q3, med, vs_)
-    pm = quantiles([float(a["price_uzs"]) for a in kept])[1]
-    formula = ("V = median(P · %s · %s · K_mil · K_cond) = %s · %s · %s · %s · %s = %s"
-               % (_fmt(v["bargain"], 2), _fmt(v["k_market"], 2), _fmt(pm), _fmt(v["bargain"], 2),
-                  _fmt(v["k_market"], 2), _fmt(km["k"], 4), _fmt(kc["k"], 2), _fmt(V)))
+    pm = quantiles([float(a["price_uzs"]) for a, _ in kept])[1]
+    pma = quantiles(age_adj)[1]
+    formula = ("V = median(P_i · %s · %s^Δ_i · K_mil · K_cond) = %s · %s · %s · %s = %s"
+               % (_fmt(v["bargain"], 2), _fmt(k_age, 2), _fmt(pma), _fmt(v["bargain"], 2),
+                  _fmt(km["k"], 4), _fmt(kc["k"], 2), _fmt(V)))
+    by_delta = {}
+    for r in age_rows:
+        by_delta.setdefault(r["delta"], []).append(r)
+    age_parts = []
+    for d, rs in sorted(by_delta.items(), key=lambda x: (x[0] is None, -(x[0] or 0))):
+        if d is None:
+            age_parts.append("год %s — год объекта не указан, k = 1, аналогов %d" % (rs[0]["year"], len(rs)))
+        else:
+            age_parts.append("год %s (Δ = %s) — %s^%d = %s, аналогов %d" % (
+                rs[0]["year"], ("%+d" % d) if d else "0", _fmt(k_age, 2), d, _fmt(rs[0]["k_age"], 4), len(rs)))
+    cut_txt = ", ".join("%s %s%s" % (_fmt(c.get("price")), "у.е." if c.get("currency") == "USD" else "сум",
+                                     " (нет года)" if c["code"] == "no_year" else "") for c in cut) or "нет"
     steps = [
-        "Аналогов найдено %d, с ценой в сумах %d; выбросы вне [%s; %s] сум отсечены: %d (%s)." % (
-            len(analogs), len(priced), _fmt(flt["low"]), _fmt(flt["high"]), len(cut),
-            ", ".join("%s %s" % (_fmt(a.get("price")), "у.е." if a.get("currency") == "USD" else "сум")
-                      for a in cut) or "нет"),
-        "В расчёте %d аналогов; медиана цены объявления P = %s сум." % (len(kept), _fmt(pm)),
-        "Торг × %s, поправка рынка × %s (раздел 3 ТЗ), K_пробег = %s%s, K_сост = %s%s." % (
-            _fmt(v["bargain"], 2), _fmt(v["k_market"], 2), _fmt(km["k"], 4),
+        "Аналогов найдено %d, с ценой в сумах %d; без года и выбросы вне [%s; %s] сум (цена с поправкой на возраст) "
+        "отсечены: %d (%s)." % (len(analogs), len(priced), _fmt(flt["low"]), _fmt(flt["high"]), len(cut), cut_txt),
+        "В расчёте %d аналогов; медиана цены объявления P = %s сум, с поправкой на возраст — %s сум." % (
+            len(kept), _fmt(pm), _fmt(pma)),
+        "Поправка на возраст k_age^Δ, k_age = %s, Δ = год аналога − год объекта%s: %s." % (
+            _fmt(k_age, 2), (" (%s)" % year) if year else "", "; ".join(age_parts)),
+        "Торг × %s (раздел 3 ТЗ), K_пробег = %s%s, K_сост = %s%s." % (
+            _fmt(v["bargain"], 2), _fmt(km["k"], 4),
             (" (пробег %s %s при норме %s за %d лет)" % (_fmt(km["mileage"]), "моточасов" if km["unit"] == "hours"
                                                           else "км", _fmt(km["norm"]), years))
             if km.get("norm") else " (пробег не указан)",
@@ -1579,11 +1629,13 @@ def analog_value(analogs: list, *, as_of=None, year=None, mileage=None, mileage_
             base["warnings"].append("курс доллара старше 7 дней — проверьте курс ЦБ на дату договора")
     base.update(available=True, V=V, range={"low": round(q1), "high": round(q3)}, reliability=rel,
                 reliability_pct=rel_pct, formula=formula, steps=steps, median_price=round(pm),
-                k={"bargain": float(v["bargain"]), "k_market": float(v["k_market"]), "mileage": km,
-                   "condition": kc},
+                median_price_age=round(pma),
+                k={"bargain": float(v["bargain"]), "k_age": k_age, "object_year": year, "age": age_rows,
+                   "mileage": km, "condition": kc},
                 analogs=[{"price": a.get("price"), "currency": a.get("currency"), "price_uzs": a.get("price_uzs"),
-                          "year": a.get("year"), "mileage_km": a.get("mileage_km"), "published": a.get("published"),
-                          "url": a.get("url")} for a in kept])
+                          "year": a.get("year"), "delta": ka["delta"], "k_age": round(ka["k"], 4),
+                          "mileage_km": a.get("mileage_km"), "published": a.get("published"),
+                          "url": a.get("url")} for a, ka in kept])
     w = sv_warning(sum_insured, V, vs_)
     if w:
         base["warnings"].append(w["text"])
@@ -1625,6 +1677,22 @@ def depreciation_value(price_new: float, year, as_of=None, *, vs_: dict, sum_ins
     return out
 
 
+def _pages_for(pages, year_from, first: bool):
+    """Снимок выдачи для проверки без сети: список — только для первого запроса (год объекта), словарь —
+    {год в ?year[from]=: [страницы]}. None — снимка нет."""
+    if pages is None:
+        return None
+    if isinstance(pages, dict):
+        return pages.get(year_from) or pages.get(str(year_from))
+    return pages if first else None
+
+
+def _analog_source(raw: dict, base_url: str) -> dict:
+    return {"name": "avtoelon.uz", "url": (raw.get("urls") or [base_url])[0], "urls": raw.get("urls") or [],
+            "status": raw.get("status"), "reason": raw.get("reason"), "fetched_at": raw.get("fetched_at"),
+            "offline": raw.get("offline"), "dropped": raw.get("dropped"), "limitations": raw.get("limitations")}
+
+
 def vehicle_valuation(con, *, brand: str, model: str, year, as_of=None, mileage=None, mileage_unit=None,
                       condition=None, sum_insured=None, price_new=None, object_type: str = "авто",
                       subtype: Optional[str] = None, pages: Optional[list] = None, network_fx: bool = True,
@@ -1646,15 +1714,41 @@ def vehicle_valuation(con, *, brand: str, model: str, year, as_of=None, mileage=
         if vs is None or not hasattr(vs, "fetch_avtoelon_analogs"):
             raw = {"status": "источник недоступен", "analogs": [], "urls": [],
                    "reason": "модуль адаптеров недоступен"}
-        else:
-            raw = vs.fetch_avtoelon_analogs(brand, model, year, as_of, fx.get("rate"), max_pages=int(v["max_pages"]),
-                                            target=int(v["analogs_target"]), year_tolerance=int(v["year_tolerance"]),
-                                            base=base_url, pages=pages, keep_html=keep_html)
-    source = {"name": "avtoelon.uz", "url": (raw.get("urls") or [base_url])[0], "urls": raw.get("urls") or [],
-              "status": raw.get("status"), "reason": raw.get("reason"), "fetched_at": raw.get("fetched_at"),
-              "offline": raw.get("offline"), "dropped": raw.get("dropped"), "limitations": raw.get("limitations")}
-    res = analog_value(raw.get("analogs") or [], as_of=as_of, year=year, mileage=mileage, mileage_unit=mileage_unit,
-                       condition=condition, sum_insured=sum_insured, vs_=vs_, source=source, fx=fx)
+    search = []
+    if object_type != OBJECT_SPECIAL or spec_section(subtype or ""):
+        if vs is not None and hasattr(vs, "fetch_avtoelon_analogs"):
+            # ТЗ 14.10.2026, К2: сначала год объекта; меньше min_analogs после отсева выбросов — год ± 1, затем ± 2
+            # (?year[from]= год − N, аналоги других лет приводятся к году объекта множителем k_age^Δ)
+            tol0 = int(v["year_tolerance"])
+            plan = [tol0] + ([t for t in (1, 2) if t > tol0] if year else [])
+            for tol in plan:
+                y_from = (int(year) - tol) if year else None
+                pg = _pages_for(pages, y_from, first=(tol == tol0))
+                if pages is not None and pg is None:
+                    break                   # проверка без сети: снимка выдачи с этого года нет
+                raw_t = vs.fetch_avtoelon_analogs(brand, model, year, as_of, fx.get("rate"),
+                                                  max_pages=int(v["max_pages"]), target=int(v["analogs_target"]),
+                                                  year_tolerance=tol, base=base_url, pages=pg, keep_html=keep_html,
+                                                  year_from=y_from)
+                src_t = _analog_source(raw_t, base_url)
+                res_t = analog_value(raw_t.get("analogs") or [], as_of=as_of, year=year, mileage=mileage,
+                                     mileage_unit=mileage_unit, condition=condition, sum_insured=sum_insured,
+                                     vs_=vs_, source=src_t, fx=fx)
+                search.append({"tolerance": tol, "year_from": y_from, "url": (raw_t.get("urls") or [None])[0],
+                               "status": raw_t.get("status"), "n_found": res_t.get("n_found"),
+                               "n": res_t.get("n")})
+                raw, res = raw_t, res_t
+                if res_t.get("available") or raw_t.get("status") not in (vs.STATUS_OK, vs.STATUS_EMPTY):
+                    break
+    if not search:
+        res = analog_value(raw.get("analogs") or [], as_of=as_of, year=year, mileage=mileage,
+                           mileage_unit=mileage_unit, condition=condition, sum_insured=sum_insured, vs_=vs_,
+                           source=_analog_source(raw, base_url), fx=fx)
+    res["search"] = search
+    if len(search) > 1 and res.get("steps") is not None:
+        res["steps"].insert(0, "Поиск аналогов: " + "; ".join(
+            "%s — %d в расчёте из %d" % ("год объекта" if s["tolerance"] == 0 else "год ± %d" % s["tolerance"],
+                                         s["n"] or 0, s["n_found"] or 0) for s in search) + ".")
     res["object"] = {"brand": brand, "model": model, "year": year, "object_type": object_type, "subtype": subtype,
                      "mileage": mileage, "mileage_unit": mileage_unit, "condition": condition}
     if not res.get("available") and price_new:

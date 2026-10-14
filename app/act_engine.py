@@ -176,7 +176,9 @@ DEFAULT_SETTINGS = {
                     "yur_only_clauses": ["lb_employer_payroll"],
                     "yur_only_measures": ["gl_safety"]},
     # оценка стоимости V (ТЗ 13.10.2026, раздел 3 и дни 5–6; app/valuation.py). Экспертно, calibrated = 0.
-    #   vehicle  — аналоги avtoelon.uz: V = median(P × bargain × k_market × K_пробег × K_сост) по аналогам без выбросов
+    #   vehicle  — аналоги avtoelon.uz: V = median(P × bargain × k_age^Δ × K_пробег × K_сост) по аналогам без выбросов
+    #              (Δ = год аналога − год объекта, ТЗ 14.10.2026 К2; прежний ключ k_market снят — в старых настройках
+    #              игнорируется, см. RETIRED_KEYS)
     #              вне [Q1 − iqr_k·IQR; Q3 + iqr_k·IQR]; K_пробег = clip(1 − mileage_sens·(пробег/норма − 1); clip);
     #              норма = mileage_norm_km (или engine_hours_norm моточасов) × лет; минимум min_analogs; надёжность
     #              (Q3 − Q1)/V: ≤ reliability_pct[0] — высокая, ≤ [1] — средняя, иначе низкая; year_tolerance — допуск
@@ -189,7 +191,7 @@ DEFAULT_SETTINGS = {
     #              износа (в ТЗ индекс не читается — 1,00 до ответа заказчика).
     "valuation": {
         "version": "1.0", "date": "2026-10-13",
-        "vehicle": {"bargain": 0.95, "k_market": 0.88, "mileage_norm_km": 20000, "engine_hours_norm": 1500,
+        "vehicle": {"bargain": 0.95, "k_age": 0.88, "mileage_norm_km": 20000, "engine_hours_norm": 1500,
                     "mileage_sens": 0.15, "mileage_clip": [0.85, 1.15],
                     "k_condition": {"new": 1.0, "good": 1.0, "worn": 0.95, "damaged": 0.80},
                     "iqr_k": 1.5, "min_analogs": 3, "reliability_pct": [15, 30], "year_tolerance": 0,
@@ -1238,10 +1240,31 @@ def deep_merge(base: Optional[dict], patch: Optional[dict]) -> dict:
     return out
 
 
+# Снятые ключи настроек (путь в act_settings): в сохранённых старых версиях они игнорируются, а не ломают проверку.
+# valuation.vehicle.k_market — постоянная поправка 0,88 заменена на k_age^Δ (ТЗ на корректировку 14.10.2026, К2).
+RETIRED_KEYS = (("valuation", "vehicle", "k_market"),)
+
+
+def migrate_settings(custom: Optional[dict]) -> dict:
+    """Копия настроек без снятых ключей RETIRED_KEYS (миграция старых версий act_settings)."""
+    out = dict(custom or {})
+    for path in RETIRED_KEYS:
+        node = out
+        for k in path[:-1]:
+            if not isinstance(node.get(k), dict):
+                break
+            node[k] = dict(node[k])         # копия: словарь вызывающего не меняется
+            node = node[k]
+        else:
+            node.pop(path[-1], None)
+    return out
+
+
 def merge_settings(custom: Optional[dict]) -> dict:
     """Настройки по умолчанию с правками администратора поверх (глубоко, deep_merge); неизвестные ключи верхнего
-    уровня отбрасываются."""
-    return deep_merge(DEFAULT_SETTINGS, {k: v for k, v in (custom or {}).items() if k in DEFAULT_SETTINGS})
+    уровня отбрасываются, снятые ключи (RETIRED_KEYS) — тоже."""
+    custom = migrate_settings(custom)
+    return deep_merge(DEFAULT_SETTINGS, {k: v for k, v in custom.items() if k in DEFAULT_SETTINGS})
 
 
 def check_settings(s: dict) -> list:
@@ -1399,7 +1422,7 @@ def check_valuation_settings(vs) -> list:
         if not isinstance(vs.get(k), str) or not vs.get(k):
             errs.append(f"valuation.{k}: строка")
     v = vs.get("vehicle") if isinstance(vs.get("vehicle"), dict) else {}
-    for key, lo, hi in (("bargain", 0.5, 1), ("k_market", 0.5, 1.2), ("mileage_norm_km", 1000, 200000),
+    for key, lo, hi in (("bargain", 0.5, 1), ("k_age", 0.5, 1.0), ("mileage_norm_km", 1000, 200000),
                         ("engine_hours_norm", 100, 8760), ("mileage_sens", 0, 1), ("iqr_k", 0.5, 5),
                         ("min_analogs", 1, 50), ("year_tolerance", 0, 5), ("max_pages", 1, 50),
                         ("analogs_target", 1, 200), ("window_months", 1, 24)):

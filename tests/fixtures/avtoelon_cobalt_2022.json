@@ -1,0 +1,221 @@
+{
+ "_note": "Разобранные аналоги Chevrolet Cobalt 2022 из tests/fixtures/avtoelon_cobalt_2022.html (живая выдача avtoelon.uz 13.10.2026, 7 страниц ?year[from]=2022&page=N), разбор valuation_sources.fetch_avtoelon_analogs при курсе ЦБ 11 809,82 сум за доллар. 20 найдено, после отсева выбросов (5 000 у.е.) — 19 аналогов. ТЗ на корректировку 14.10.2026, К2.",
+ "brand": "Chevrolet",
+ "model": "Cobalt",
+ "year": 2022,
+ "as_of": "2026-10-13",
+ "fx_rate": 11809.82,
+ "source_urls": [
+  "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022",
+  "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022&page=2",
+  "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022&page=3",
+  "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022&page=4",
+  "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022&page=5",
+  "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022&page=6",
+  "https://avtoelon.uz/avto/chevrolet/cobalt/?year%5Bfrom%5D=2022&page=7"
+ ],
+ "n_found": 20,
+ "n_after_iqr": 19,
+ "analogs": [
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 5000.0,
+   "currency": "USD",
+   "price_uzs": 59049100.0,
+   "year": 2022,
+   "mileage_km": 87000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7578818"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 евро позиция",
+   "price": 11000.0,
+   "currency": "USD",
+   "price_uzs": 129908020.0,
+   "year": 2022,
+   "mileage_km": 46000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7606960"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 евро позиция",
+   "price": 10001.0,
+   "currency": "USD",
+   "price_uzs": 118110009.82,
+   "year": 2022,
+   "mileage_km": 120000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7573725"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9800.0,
+   "currency": "USD",
+   "price_uzs": 115736236.0,
+   "year": 2022,
+   "mileage_km": 35700.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7597826"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9500.0,
+   "currency": "USD",
+   "price_uzs": 112193290.0,
+   "year": 2022,
+   "mileage_km": 61900.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7572613"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 10500.0,
+   "currency": "USD",
+   "price_uzs": 124003110.0,
+   "year": 2022,
+   "mileage_km": 51000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7559497"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9600.0,
+   "currency": "USD",
+   "price_uzs": 113374272.0,
+   "year": 2022,
+   "mileage_km": 170000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7605807"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 8700.0,
+   "currency": "USD",
+   "price_uzs": 102745434.0,
+   "year": 2022,
+   "mileage_km": 153000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7596773"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9700.0,
+   "currency": "USD",
+   "price_uzs": 114555254.0,
+   "year": 2022,
+   "mileage_km": 49000.0,
+   "published": "2026-10-12",
+   "url": "https://avtoelon.uz/a/show/7605324"
+  },
+  {
+   "title": "Chevrolet Cobalt",
+   "price": 10000.0,
+   "currency": "USD",
+   "price_uzs": 118098200.0,
+   "year": 2022,
+   "mileage_km": 75000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7601102"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9500.0,
+   "currency": "USD",
+   "price_uzs": 112193290.0,
+   "year": 2022,
+   "mileage_km": 110000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7589610"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 евро позиция",
+   "price": 10200.0,
+   "currency": "USD",
+   "price_uzs": 120460164.0,
+   "year": 2022,
+   "mileage_km": 45000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7590361"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9000.0,
+   "currency": "USD",
+   "price_uzs": 106288380.0,
+   "year": 2022,
+   "mileage_km": 192000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607532"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9665.0,
+   "currency": "USD",
+   "price_uzs": 114141910.3,
+   "year": 2022,
+   "mileage_km": 100000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607471"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 8800.0,
+   "currency": "USD",
+   "price_uzs": 103926416.0,
+   "year": 2022,
+   "mileage_km": 114000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607447"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9200.0,
+   "currency": "USD",
+   "price_uzs": 108650344.0,
+   "year": 2022,
+   "mileage_km": 110000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7590232"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 10300.0,
+   "currency": "USD",
+   "price_uzs": 121641146.0,
+   "year": 2022,
+   "mileage_km": 58000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7573848"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 10750.0,
+   "currency": "USD",
+   "price_uzs": 126955565.0,
+   "year": 2022,
+   "mileage_km": 75000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7573727"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 евро позиция",
+   "price": 9300.0,
+   "currency": "USD",
+   "price_uzs": 109831326.0,
+   "year": 2022,
+   "mileage_km": 68000.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607185"
+  },
+  {
+   "title": "Chevrolet Cobalt, 4 позиция",
+   "price": 9600.0,
+   "currency": "USD",
+   "price_uzs": 113374272.0,
+   "year": 2022,
+   "mileage_km": 119.0,
+   "published": "2026-10-13",
+   "url": "https://avtoelon.uz/a/show/7607130"
+  }
+ ]
+}

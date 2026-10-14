@@ -652,10 +652,11 @@ def query_ok(url: str) -> bool:
 def fetch_avtoelon_analogs(brand: str, model: str, year: Optional[int], as_of: date, rate: Optional[float],
                            max_pages: int = 15, target: int = 20, year_tolerance: int = 0,
                            base: str = AVTOELON_CARS, pages: Optional[List[str]] = None,
-                           keep_html: bool = False) -> dict:
+                           keep_html: bool = False, year_from: Optional[int] = None) -> dict:
     """
     Аналоги для оценки ТС: выдача avtoelon.uz по марке и модели с ?year[from]=<год>, дальше &page=N, пока не
     наберётся target аналогов нужного года (± year_tolerance) или не кончатся страницы (max_pages).
+    year_from — год в ?year[from]= (по умолчанию год объекта; при поиске ± N лет — год объекта − N, ТЗ 14.10.2026 К2).
     Каждый адрес проверяется по списку параметров и по robots.txt (urllib.robotparser и RFC 9309); пауза между
     обращениями — MIN_DELAY_SEC, User-Agent — честный. pages — сохранённые страницы (проверка без сети): тогда в сеть
     не ходим вовсе. Окно свежести — WINDOW_MONTHS по lastUpdate (как у остальных адаптеров).
@@ -670,10 +671,11 @@ def fetch_avtoelon_analogs(brand: str, model: str, year: Optional[int], as_of: d
         out["reason"] = "нужны марка и модель латиницей — запрос к выдаче построить нельзя"
         return out
     want = int(year) if year else None
+    y_from = int(year_from) if year_from else want
     seen, html_all = set(), []
     n_pages = len(pages) if pages is not None else max(1, int(max_pages))
     for page in range(1, n_pages + 1):
-        url = analog_url(brand, model, want, page, base)
+        url = analog_url(brand, model, y_from, page, base)
         out["urls"].append(url)
         if pages is not None:
             html = pages[page - 1]
