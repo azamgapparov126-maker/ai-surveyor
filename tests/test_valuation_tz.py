@@ -265,8 +265,8 @@ def check_sv(res):
     if st != 200:
         return
     sv = a["value_sv"]
-    ok("S 150 млн при V → «перестрахование», ГК ст. 938",
-       sv["verdict"] == "over" and sv["label"] == "перестрахование" and sv["legal_ref"] == "ГК РУз, ст. 938"
+    ok("S 150 млн при V → «страхование сверх страховой стоимости», ГК ст. 938",
+       sv["verdict"] == "over" and sv["label"] == "страхование сверх страховой стоимости" and sv["legal_ref"] == "ГК РУз, ст. 938"
        and sv["ratio_pct"] == round(150_000_000 / Vv * 100, 2) and "938" in sv["text"], sv)
     ok("в акте act_json.valuation — метод analogs и формула",
        a["valuation"]["method"] == "analogs" and a["valuation"]["V"] == Vv and a["valuation"]["formula"]
@@ -526,6 +526,25 @@ def check_settings():
     errs = ae.check_settings({"valuation": {"vehicle": {"bargain": 3}, "sv_band": [120, 90]}})
     ok("ошибки ловятся", any("bargain" in e for e in errs) and any("sv_band" in e for e in errs), errs)
 
+# ------------------------------------------------------------------ 8. Термины S/V (ТЗ 14.10.2026, К1)
+
+def check_sv_terms():
+    print("8. К1: «страхование сверх страховой стоимости» и «неполное страхование» (ГК ст. 938 и 936)")
+    vs_ = V.val_settings(None, {})
+    over = V.sv_check(150_000_000, 111_000_000, vs_)
+    ok("S 150 млн, V 111 млн — ярлык «страхование сверх страховой стоимости», текст с «ГК ст. 938»",
+       over["verdict"] == "over" and over["label"] == "страхование сверх страховой стоимости"
+       and "ГК ст. 938" in over["text"]["ru"] and "страхование сверх страховой стоимости" in over["text"]["ru"]
+       and "перестрах" not in over["text"]["ru"], over)
+    under = V.sv_check(80_000_000, 111_000_000, vs_)
+    ok("S 80 млн, V 111 млн — ярлык «неполное страхование», «ст. 936»",
+       under["verdict"] == "under" and under["label"] == "неполное страхование" and "ст. 936" in under["text"]["ru"],
+       under)
+    w = V.sv_warning(150_000_000, 111_000_000, vs_)
+    ok("предупреждение оценки — без слова «перестрахование»",
+       "страхование сверх страховой стоимости" in w["text"] and "перестрах" not in w["text"], w)
+    ok("uz/en не тронуты", "qiymatdan ortiq" in over["text"]["uz"] and "over-insurance" in over["text"]["en"], over)
+
 
 def main():
     llm_post, http_get = llm._post, vs._http_get
@@ -545,6 +564,7 @@ def main():
             check_exchange_range()
             check_cost()
             check_settings()
+            check_sv_terms()
     finally:
         llm._post, vs._http_get = llm_post, http_get
     print("\nитог: ок %d, плохо %d" % (passed, failed))

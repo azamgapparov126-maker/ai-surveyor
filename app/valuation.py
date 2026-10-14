@@ -1508,7 +1508,7 @@ def sv_warning(S: Optional[float], V: Optional[float], vs_: dict) -> Optional[di
     return {"code": "sv_over" if pct > hi else "sv_under", "pct": round(pct),
             "text": "Страховая сумма %s сум — %d %% от рынка (%s сум): %s" % (
                 _fmt(S), round(pct), _fmt(V),
-                "перестрахование, сумма сверх стоимости недействительна (ГК ст. 938)" if pct > hi
+                "страхование сверх страховой стоимости, сумма сверх стоимости недействительна (ГК ст. 938)" if pct > hi
                 else "недострахование, выплата пропорционально (ГК ст. 936)")}
 
 
@@ -1874,11 +1874,11 @@ SV_TEXT = {
     "under": {"ru": "S/V = {r} %: недострахование — выплата пропорционально (ГК ст. 936)",
               "uz": "S/V = {r} %: to'liq sug'urtalanmagan — to'lov mutanosib (FK 936-modda)",
               "en": "S/V = {r} %: underinsurance — claims paid pro rata (Civil Code art. 936)"},
-    "over": {"ru": "S/V = {r} %: перестрахование — сумма сверх стоимости недействительна (ГК ст. 938)",
+    "over": {"ru": "S/V = {r} %: страхование сверх страховой стоимости — сумма сверх стоимости недействительна (ГК ст. 938)",
              "uz": "S/V = {r} %: qiymatdan ortiq sug'urta — ortiqcha qism haqiqiy emas (FK 938-modda)",
              "en": "S/V = {r} %: over-insurance — the excess over value is void (Civil Code art. 938)"},
 }
-SV_LABEL = {"normal": "норма", "under": "недострахование", "over": "перестрахование"}
+SV_LABEL = {"normal": "норма", "under": "неполное страхование", "over": "страхование сверх страховой стоимости"}
 
 
 def sv_check(S: float, V: float, vs_: dict, settings: Optional[dict] = None) -> dict:

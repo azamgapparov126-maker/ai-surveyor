@@ -583,7 +583,7 @@ def render_md(rep: dict) -> str:
         L.append("- %s: %s%s" % (r["id"], v, ("; " + "; ".join(extra)) if extra else ""))
     cob = rep.get("cobalt")
     if cob:
-        L += ["", "## Cobalt 2022 по аналогам avtoelon.uz (критерий 5: ≈ 111 млн, предупреждение о перестраховании)",
+        L += ["", "## Cobalt 2022 по аналогам avtoelon.uz (критерий 5: ≈ 111 млн, предупреждение о страховании сверх страховой стоимости)",
               "", "%s: метод %s, V %s, аналогов %s из %s; источник: %s %s; предупреждение: %s" % (
                   "выполнено" if cob["ok"] else "НЕ выполнено", cob.get("method"), _n(cob.get("V")), cob.get("n"),
                   cob.get("n_found"), cob.get("source_status") or "ответил", cob.get("source_reason") or "",
@@ -628,7 +628,7 @@ def _rel(p: Path) -> str:
 def cobalt_probe(client) -> dict:
     """
     Критерий 5 таблицы приёмки: Cobalt 2022 при S 150 млн — ≈ 111 млн сум по аналогам avtoelon.uz и предупреждение
-    о перестраховании. Без цены нового: запасной метод не подменяет аналоги. Оценка не сохраняется (save = false).
+    о страховании сверх страховой стоимости. Без цены нового: запасной метод не подменяет аналоги. Оценка не сохраняется (save = false).
     """
     st, v = post_json(client, "/valuation/vehicle", {"brand": "Chevrolet", "model": "Cobalt", "year": 2022,
                                                      "sum_insured": 150 * M, "save": False})
