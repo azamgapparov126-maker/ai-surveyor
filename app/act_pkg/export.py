@@ -18,7 +18,7 @@ import pymupdf
 
 from .. import act_scoring as asc
 from .. import act_texts as tx
-from .. import db
+from .. import db, fonts
 from ..act_texts import t
 from ..docx_lite import Docx
 from ..proposal import A4_H, A4_W, BLACK, GRAY, LINE, FILL
@@ -280,22 +280,17 @@ def _dpara(text, *, bold=False, italic=False, size=20, color=None, before=0, aft
 #  PDF
 # --------------------------------------------------------------------------- #
 
-# Windows — Arial; сервер (Dockerfile ставит fonts-dejavu-core) — DejaVu Sans, в нём есть узбекская ʻ
-FONT_CANDIDATES = (
-    (r"C:\Windows\Fonts\arial.ttf", r"C:\Windows\Fonts\arialbd.ttf"),
-    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-    ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
-)
+# список шрифтов — app/fonts.py (Arial на Windows, DejaVu Sans на сервере)
 GLYPH_FALLBACK = {"ʻ": "'", "ʼ": "'", "−": "-", "—": "-", "×": "x", "≤": "<=", "≥": ">=", "→": "->",
                   "«": '"', "»": '"', "…": "...", "\u00a0": " ", "θ": "theta", "•": "*"}
 
 
 def _fonts():
-    for reg, bold in FONT_CANDIDATES:
-        if Path(reg).exists() and Path(bold).exists():
-            return pymupdf.Font(fontfile=reg), pymupdf.Font(fontfile=bold)
-    # на сервере без шрифтов — встроенные Helvetica (кириллица в них есть, узбекской ʻ нет)
+    pair = fonts.find_pair()
+    if pair:
+        return pymupdf.Font(fontfile=pair[0]), pymupdf.Font(fontfile=pair[1])
+    # акт не роняем: встроенные Helvetica (кириллица есть, узбекская ʻ — через GLYPH_FALLBACK), пути — в журнал
+    fonts.log_missing("акт, запасной шрифт Helvetica", once=True)
     return pymupdf.Font("helv"), pymupdf.Font("hebo")
 
 

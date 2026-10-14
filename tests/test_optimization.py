@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 os.environ.pop("SURVEYOR_DEV", None)             # вход по сессии, как на Railway
 
 from tmpdb import temp_db                        # noqa: E402
-from app import auth, db, tgbot                  # noqa: E402
+from app import auth, db, fonts, tgbot           # noqa: E402
 from app.main import app                         # noqa: E402
 
 PASSED = []
@@ -242,6 +242,12 @@ def check_gzip_and_downloads():
                               (f"/requests/{rid}/proposal.pdf", b"%PDF", "inline"),
                               (f"/requests/{rid}/analysis.xlsx", b"PK", "attachment")):
         st, h, blob = call("GET", path, headers={"accept-encoding": "gzip, deflate"})
+        if magic == b"%PDF" and fonts.find_pair() is None:
+            # на машине нет шрифта из app/fonts.py: PDF не проверить, но ответ обязан быть понятной 503
+            print(f"  ПРОПУСК 6а/6б {path.split('/')[-1]}: нет шрифта для PDF (проверенные пути — в журнале)")
+            ok(f"6а. {path.split('/')[-1]}: нет шрифта — 503 «На сервере нет шрифта»",
+               st == 503 and fonts.NO_FONT.encode("utf-8") in blob, (st, blob[:200]))
+            continue
         good = st == 200 and not h.get("content-encoding") and blob[:len(magic)] == magic \
             and h.get("content-disposition", "").startswith(disp)
         if magic == b"PK":

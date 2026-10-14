@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tmpdb import temp_db                          # noqa: E402  (tests/tmpdb.py)
 from app.main import RequestIn, create_request     # noqa: E402
+from app import fonts                              # noqa: E402
 from app.proposal import build_proposal            # noqa: E402
 
 OUT = ROOT / "sandbox" / "proposal_test.pdf"
@@ -37,12 +38,23 @@ def _proposal_checks():
     saved = create_request(body)
     rid = saved["request_id"]
 
+    if fonts.find_pair() is None:
+        # нет шрифта из app/fonts.py (ни Arial, ни DejaVu Sans): PDF не проверить, ответ — понятная 503
+        from fastapi import HTTPException
+        try:
+            build_proposal(rid)
+        except HTTPException as e:
+            assert e.status_code == 503 and fonts.NO_FONT in e.detail, (e.status_code, e.detail)
+            print("ПРОПУСК: нет шрифта для PDF — предложение отвечает 503 «На сервере нет шрифта»")
+            return
+        raise AssertionError("без шрифта предложение должно отвечать 503")
+
     pdf = build_proposal(rid)
     assert pdf[:5] == b"%PDF-", "не PDF"
     OUT.write_bytes(pdf)
 
     doc = pymupdf.open(stream=pdf, filetype="pdf")
-    # шрифт Arial отдаёт пробел как неразрывный (общий глиф) — приводим к обычному
+    # шрифт (Arial) может отдать пробел как неразрывный (общий глиф) — приводим к обычному
     text = "\n".join(p.get_text() for p in doc).replace(" ", " ")
     pages = doc.page_count
     doc.close()

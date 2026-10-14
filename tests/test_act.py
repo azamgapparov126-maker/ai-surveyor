@@ -53,7 +53,7 @@ os.environ["SURVEYOR_NO_BACKGROUND"] = "1"
 import pymupdf                            # noqa: E402
 
 from tmpdb import ensure_market_stats, ensure_stat_series, temp_db   # noqa: E402
-from app import act, act_engine as ae, db, guest, llm   # noqa: E402
+from app import act, act_engine as ae, db, fonts, guest, llm   # noqa: E402
 from app import rate_model as rm   # noqa: E402
 from app import act_market as am, act_texts as tx       # noqa: E402
 from app.engine import Input, min_rate, premium_of, rate_for   # noqa: E402
@@ -2940,12 +2940,20 @@ def xlsx_table(rows) -> bytes:
     return buf.getvalue()
 
 
-def pdf_table(rows) -> bytes:
-    """PDF с текстовым слоем: каждая ячейка — своя строка (так pymupdf отдаёт текст таблицы)."""
+def no_font_ua(s: str) -> str:
+    """Без шрифта из app/fonts.py акт в Helvetica: узбекская ʻ в PDF — апостроф (GLYPH_FALLBACK); со шрифтом — как есть."""
+    return s.replace("ʻ", "'") if fonts.find_pair() is None else s
+
+
+def pdf_table(rows):
+    """PDF с текстовым слоем: каждая ячейка — своя строка (так pymupdf отдаёт текст таблицы).
+    Шрифт — из app/fonts.py (Arial / DejaVu Sans); нет ни одного — None, проверка пропускается."""
+    font = fonts.find_font()
+    if font is None:
+        return None
     doc = pymupdf.open()
     page = doc.new_page()
     y = 40
-    font = r"C:\Windows\Fonts\arial.ttf"
     for n, lab, val in rows:
         for t in [n, lab] + (val if isinstance(val, list) else [val]):
             if t:
@@ -3054,11 +3062,16 @@ def check_branch_text():
     ok("образец 2: класс-подсказка — оборудование", b2["class_hint"] == "equipment" and b2["group"] == "equipment",
        (b2["class_hint"], b2["group"]))
 
-    st, b3 = upload([("sorov1.pdf", "application/pdf", pdf_table(BR_SAMPLE1))], {"lang": "ru"})
-    ok("PDF с текстом (ячейки построчно) — тот же разбор без модели",
-       st == 200 and not CALLS and (b3.get("branch_request") or {}).get("rows_found") == 16, (st, b3))
-    if b3.get("branch_request"):
-        check_br_fields("PDF 1", b3["branch_request"]["fields"], 1)
+    pdf1 = pdf_table(BR_SAMPLE1)
+    if pdf1 is None:
+        print("  ПРОПУСК: PDF с текстом — на машине нет шрифта из app/fonts.py (проверенные пути — в журнале)")
+        fonts.log_missing("тест pdf_table")
+    else:
+        st, b3 = upload([("sorov1.pdf", "application/pdf", pdf1)], {"lang": "ru"})
+        ok("PDF с текстом (ячейки построчно) — тот же разбор без модели",
+           st == 200 and not CALLS and (b3.get("branch_request") or {}).get("rows_found") == 16, (st, b3))
+        if b3.get("branch_request"):
+            check_br_fields("PDF 1", b3["branch_request"]["fields"], 1)
 
     # русские подписи и русский срок
     ru_rows = [("1.", "Вид страхования (код):", "0832"), ("2.", "Страхователь:", 'ООО "Ромашка"'),
@@ -3348,7 +3361,8 @@ def check_branch_langs_files(aid):
         st, blob, h = call("GET", f"/act/{aid}.pdf", params={"lang": lang}, raw=True)
         text = pdf_text(pymupdf.open(stream=blob, filetype="pdf"))
         ok(f"{lang}: сверка в PDF — то же", title.replace("ʻ", "'") not in text.replace("ʻ", "'")
-           and (not a["below_min_assessment"]["available"] or bm_word in text), text[-300:])
+           and (not a["below_min_assessment"]["available"]
+                or bm_word.replace("ʻ", "'") in text.replace("ʻ", "'")), text[-300:])
     # старый акт без сверки — блок недоступен, ничего не падает
     with db.tx() as con:
         row = db.rows(con, "SELECT act_json FROM acts WHERE id=?", aid)[0]
@@ -6225,7 +6239,7 @@ def check_parts_langs_files(aid):
         a = call("GET", f"/act/{aid}", params={"lang": lang})[1]
         prem = flat(act.money(a["premium"]["amount"], lang))
         ok(f"Word и PDF ({lang}): ставки по частям и премия договора {prem}",
-           word in dx and prem in dx and word in pd and prem in pd, (word in dx, prem in dx, word in pd, prem in pd))
+           word in dx and prem in dx and word in pd and no_font_ua(prem) in pd, (word in dx, prem in dx, word in pd, prem in pd))
     # однопродуктовые акты: блок parts — single, остальное как прежде
     for code, must, opt in (("0318", CRANE_MUST, CRANE_OPT), ("0807", WH8_MUST, WH8_OPT),
                             ("0832", {"product_code": "0832", "sum_insured": 5e9, "object_value": 5e9,
@@ -7107,7 +7121,7 @@ def check_scoring_langs(aid, cr_aid):
            (sc["class_label"], sc["scale"]["bands"][3]["label"]))
         st, blob, h = call("GET", f"/act/{aid}/scoring.pdf", params={"lang": lang}, raw=True)
         p1 = pymupdf.open(stream=blob, filetype="pdf")[0].get_text()
-        ok(f"{lang}: scoring.pdf — страница скоринга на языке акта", sc["title"] in p1.replace("\u00a0", " "), p1[:120])
+        ok(f"{lang}: scoring.pdf — страница скоринга на языке акта", no_font_ua(sc["title"]) in p1.replace("\u00a0", " "), p1[:120])
         st, c = call("GET", f"/act/{cr_aid}", params={"lang": lang})
         lines = [x for x in c["borrower"]["lines"] if "NAMUNA" not in x]     # названия банков — как в отчёте
         cyr = [x for x in lines if CYR.search(re.sub(r"«[^»]*»|\"[^\"]*\"", "", x))]
@@ -7298,6 +7312,9 @@ def check_scoring_review(aid):
     # повёрнутые подписи — по буквам (рамка всего повёрнутого слова шире самого слова)
     names = [b["label"] for b in sc["scale"]["bands"]]
     for lg in ("ru", "uz", "en"):
+        if lg == "uz" and fonts.find_pair() is None:
+            print("  ПРОПУСК п. 9 (uz): нет шрифта для PDF — подписи с ʻ в Helvetica не сопоставить")
+            continue
         st, al = call("GET", f"/act/{aid}", params={"lang": lg})
         s3 = al["scoring"]
         names = [b["label"] for b in s3["scale"]["bands"]]

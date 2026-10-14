@@ -34,7 +34,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from . import approvals, db, outcomes, proposal
+from . import approvals, db, fonts, outcomes, proposal
 from .auth import current_user
 from .proposal import CONTENT_W, GRAY, money, pct, ru_date
 
@@ -138,12 +138,10 @@ def _source_rows(data: dict) -> list:
 # --------------------------------------------------------------------------- #
 
 def build_analysis_pdf(con, rid: int) -> bytes:
-    if not proposal.FONT_REGULAR.exists():
-        raise HTTPException(503, "На сервере нет шрифта для PDF (Arial). Пока доступна выгрузка XLSX; "
-                                 "для PDF нужно положить шрифт рядом с приложением")
+    fonts.require_pair("анализ запроса", "Пока доступна выгрузка XLSX")   # до сбора данных: 503 сразу
     data = collect(con, rid)
     req, obj, calc = data["request"], data["object"], data["calculation"]
-    pdf = proposal._Pdf()
+    pdf = proposal._Pdf("анализ запроса")
     pdf.footer = "СО АО «INSON» — Анализ запроса (для компании)"
 
     # 1. Карточка запроса

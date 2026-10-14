@@ -36,7 +36,7 @@ import test_act as T                                      # noqa: E402  ASGI-к�
 import test_valuation_tz as VT                            # noqa: E402  учебные биржевые сделки
 from tmpdb import ensure_market_stats, ensure_stat_series, temp_db   # noqa: E402
 from app import act, act_engine as ae, act_extras as ax, contract_read as cr, db, guest, llm   # noqa: E402
-from app import act_texts as tx, valuation as V             # noqa: E402
+from app import act_texts as tx, fonts, valuation as V      # noqa: E402
 from app.act_pkg import compact, exif, export, qr           # noqa: E402
 from app.act_pkg.documents import ct_clean                  # noqa: E402
 from app.act_pkg.recognize import parse_model               # noqa: E402
@@ -266,6 +266,10 @@ def check_documents(samples: bool):
     for name, (a, photos, must) in docs.items():
         js = act_langs(a["id"])
         for lang in LANGS:
+            if lang == "uz" and fonts.find_pair() is None:
+                # без шрифта из app/fonts.py акт в Helvetica: узбекская ʻ заменяется на ' — сверку текста не проверить
+                print(f"  ПРОПУСК {name} [uz]: нет шрифта для PDF (проверенные пути — в журнале)")
+                continue
             want = must if lang == "ru" else tuple(m for m in must if not re.search("[А-Яа-яЁё]", m))
             if name.startswith("магазин") and lang != "ru":
                 want = ("450 m²", "15%" if lang == "en" else "15 %")

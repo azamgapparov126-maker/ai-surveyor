@@ -3,22 +3,20 @@
   GET /requests/{rid}/proposal.pdf
 
 Данные — из базы (запрос, объект, расчёт, проверки, рекомендации); предупредительные мероприятия
-пересчитываются движком на актуальных справочниках. Вёрстка — pymupdf, шрифт Arial (кириллица).
+пересчитываются движком на актуальных справочниках. Вёрстка — pymupdf, шрифт из app/fonts.py
+(Arial на Windows, DejaVu Sans на сервере; нет ни одного — 503).
 """
 import json
 from datetime import datetime
-from pathlib import Path
 
 import pymupdf
 from fastapi import APIRouter, HTTPException, Response
 
-from . import db
+from . import db, fonts
 from .engine import Input, calculate
 
 router = APIRouter()
 
-FONT_REGULAR = Path(r"C:\Windows\Fonts\arial.ttf")
-FONT_BOLD = Path(r"C:\Windows\Fonts\arialbd.ttf")
 
 A4_W, A4_H = 595.28, 841.89
 MARGIN = 20 / 25.4 * 72            # 20 мм в пунктах
@@ -71,10 +69,11 @@ def days_word(n: int) -> str:
 class _Pdf:
     """Поток текста сверху вниз с переносом слов и страниц. Один шрифт — один TextWriter на цвет."""
 
-    def __init__(self):
+    def __init__(self, where: str = "предложение клиенту"):
         self.doc = pymupdf.open()
-        self.regular = pymupdf.Font(fontfile=str(FONT_REGULAR))
-        self.bold = pymupdf.Font(fontfile=str(FONT_BOLD))
+        reg, bold = fonts.require_pair(where)     # нет шрифта — 503 и проверенные пути в журнал
+        self.regular = pymupdf.Font(fontfile=reg)
+        self.bold = pymupdf.Font(fontfile=bold)
         self.page = None
         self.writers = {}
         self.y = 0.0

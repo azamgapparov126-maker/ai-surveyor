@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("SURVEYOR_DEV", "1")
 
 from tmpdb import temp_db  # noqa: E402  (tests/tmpdb.py)
-from app import approvals, auth, db, exports, llm, outcomes, registration, telegram, tgbot  # noqa: E402
+from app import approvals, auth, db, exports, fonts, llm, outcomes, registration, telegram, tgbot  # noqa: E402
 from app.main import app                                                                    # noqa: E402
 
 TOKEN = "123456:TEST"                      # вымышленный токен бота, сеть не трогаем
@@ -419,10 +419,15 @@ def check_decide_and_exports(ids, rid, new_uid):
     print("10. чужому выгрузки анализа недоступны — 403 — ок")
 
     st, blob = call("GET", f"/requests/{rid}/analysis.pdf", who="новый", raw=True)
-    assert st == 200 and blob[:4] == b"%PDF", (st, blob[:40])
-    st, blob = call("GET", f"/requests/{rid}/analysis.pdf", who=LOGINS[0], raw=True)
-    assert st == 200 and blob[:4] == b"%PDF", (st, blob[:40])
-    print(f"11. analysis.pdf отдаётся инициатору и админу ({len(blob)} байт, начинается с %PDF) — ок")
+    if fonts.find_pair() is None:
+        # нет шрифта из app/fonts.py: PDF не проверить, ответ — понятная 503
+        assert st == 503 and fonts.NO_FONT.encode("utf-8") in blob, (st, blob[:200])
+        print("11. ПРОПУСК: нет шрифта для PDF — analysis.pdf отвечает 503 «На сервере нет шрифта»")
+    else:
+        assert st == 200 and blob[:4] == b"%PDF", (st, blob[:40])
+        st, blob = call("GET", f"/requests/{rid}/analysis.pdf", who=LOGINS[0], raw=True)
+        assert st == 200 and blob[:4] == b"%PDF", (st, blob[:40])
+        print(f"11. analysis.pdf отдаётся инициатору и админу ({len(blob)} байт, начинается с %PDF) — ок")
 
     st, blob = call("GET", f"/requests/{rid}/analysis.xlsx", who="новый", raw=True)
     assert st == 200 and blob[:2] == b"PK", (st, blob[:40])
@@ -488,10 +493,15 @@ def check_decide_and_exports(ids, rid, new_uid):
     head = [c.value for row in wb2["Запрос"].iter_rows() for c in row]
     assert s["probability"] in head, head
     st, pdf_blob = call("GET", f"/requests/{rid}/analysis.pdf", who=LOGINS[0], raw=True)
-    assert st == 200 and pdf_blob[:4] == b"%PDF" and len(pdf_blob) > len(blob) // 4, len(pdf_blob)
-    assert outcomes.NOT_READY.encode("utf-8") not in pdf_blob        # текст PDF сжат, но проверка дешёвая
-    print(f"13в. в analysis.xlsx появился лист «Вероятность» ({s['probability']} %, пометка про "
-          f"калибровку), в analysis.pdf — раздел с разбором ({len(pdf_blob)} байт) — ок")
+    if fonts.find_pair() is None:
+        assert st == 503, (st, pdf_blob[:200])
+        print(f"13в. в analysis.xlsx появился лист «Вероятность» ({s['probability']} %) — ок; "
+              "ПРОПУСК части про analysis.pdf: нет шрифта, ответ 503")
+    else:
+        assert st == 200 and pdf_blob[:4] == b"%PDF" and len(pdf_blob) > len(blob) // 4, len(pdf_blob)
+        assert outcomes.NOT_READY.encode("utf-8") not in pdf_blob    # текст PDF сжат, но проверка дешёвая
+        print(f"13в. в analysis.xlsx появился лист «Вероятность» ({s['probability']} %, пометка про "
+              f"калибровку), в analysis.pdf — раздел с разбором ({len(pdf_blob)} байт) — ок")
 
     # решение согласующего: факт ложится в ту же строку, где лежит прогноз
     with db.tx() as con:
