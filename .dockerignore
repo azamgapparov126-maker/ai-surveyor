@@ -57,3 +57,4 @@ docs/stat_uz_catalog.json
 
 # тесты в образе не нужны
 tests/
+!tests/fixtures/live_check_expected.json
